@@ -1,20 +1,29 @@
 import MetricCard from "./MetricCard"
 
-export default function MetricsStrip({ results }) {
-  const cards = [
-    ["Total Return", `${results.total_return_pct}%`, "vs benchmark", "good"],
-    ["Sharpe Ratio", results.sharpe_ratio, "risk adjusted", "good"],
-    ["Max Drawdown", `${results.max_drawdown_pct}%`, "peak to trough", "bad"],
-    ["Win Rate", `${results.win_rate_pct}%`, "winning trades", "good"],
-    ["Total Trades", results.total_trades, "executed", "neutral"],
-    ["CAGR", `${results.cagr_pct}%`, "annualized", "good"],
-  ]
+const METRIC_CONFIG = [
+  { key: "total_return_pct", label: "Total Return", suffix: "%", positive: (v) => v > 0 },
+  { key: "sharpe_ratio", label: "Sharpe Ratio", suffix: "", positive: (v) => v > 1 },
+  { key: "max_drawdown_pct", label: "Max Drawdown", suffix: "%", positive: (v) => v > -20 },
+  { key: "win_rate_pct", label: "Win Rate", suffix: "%", positive: (v) => v > 50 },
+  { key: "total_trades", label: "Total Trades", suffix: "", positive: () => true },
+  { key: "cagr_pct", label: "CAGR", suffix: "%", positive: (v) => v > 0 },
+]
 
+export default function MetricsStrip({ metrics }) {
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
-      {cards.map(([label, value, sub, tone]) => (
-        <MetricCard key={label} label={label} value={value} sub={sub} tone={tone} />
-      ))}
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      {METRIC_CONFIG.map((cfg) => {
+        const value = metrics?.[cfg.key]
+        const display = value == null ? "-" : `${value}${cfg.suffix}`
+        return (
+          <MetricCard
+            key={cfg.key}
+            label={cfg.label}
+            value={display}
+            tone={cfg.positive(value) ? "good" : "bad"}
+          />
+        )
+      })}
     </div>
   )
 }

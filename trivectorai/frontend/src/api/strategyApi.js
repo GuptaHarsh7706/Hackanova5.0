@@ -1,92 +1,110 @@
-const API_ROOT = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "")
+import axios from "axios"
 
-const buildUrl = (path) => `${API_ROOT}${path.startsWith("/api") ? path : `/api${path}`}`
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api"
 
-const extractError = async (response) => {
-  try {
-    const payload = await response.json()
-    return payload.detail || payload.message || "Request failed"
-  } catch {
-    return `Request failed with status ${response.status}`
+const api = axios.create({
+  baseURL: BASE_URL,
+  timeout: 60000,       // 60s — backtest can take a while
+  headers: { "Content-Type": "application/json" }
+})
+
+// ─── Request interceptor: attach session_id from localStorage if present ───
+api.interceptors.request.use((config) => {
+  const sessionId = localStorage.getItem("trivector_session_id")
+  if (sessionId && config.data) {
+    config.data = { ...config.data, session_id: sessionId }
   }
-}
+  return config
+})
 
-const request = async (path, options = {}) => {
-  const response = await fetch(buildUrl(path), {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
+// ─── Response interceptor: save session_id when backend returns one ───
+api.interceptors.response.use(
+  (response) => {
+    const sessionId = response.data?.session_id
+    if (sessionId) localStorage.setItem("trivector_session_id", sessionId)
+    return response
+  },
+  (error) => {
+    const message =
+      error.response?.data?.detail ||
+      error.response?.data?.message ||
+      (error.code === "ECONNABORTED" ? "Request timed out. The backtest may be taking too long." :
+       error.code === "ERR_NETWORK"  ? "Cannot connect to backend. Is it running on port 8000?" :
+       "An unexpected error occurred.")
+    return Promise.reject(new Error(message))
+  }
+)
+
+// ─── Strategy parsing ───────────────────────────────────────────────────────
+
+/**
+ * Send a user message to the AI agent for strategy parsing.
+ * @param {string} message - User's plain English strategy
+ * @param {Array}  conversationHistory - [{role, content}, ...] from Zustand store
+ * @returns {Promise<ParseResponse>}
+ */
+export const parseStrategy = async (message, conversationHistory = []) => {
+  const { data } = await api.post("/parse-strategy", {
+    message,
+    conversation_history: conversationHistory,
   })
-
-  if (!response.ok) {
-    throw new Error(await extractError(response))
-  }
-
-  return response.json()
+  return data
 }
 
-export const normalizeBacktestResult = (payload) => {
-  if (!payload) return null
+// ─── Backtest ───────────────────────────────────────────────────────────────
 
-  const result = payload.result ? payload.result : payload
-  const metrics = result.metrics || {}
-  return {
-    ...result,
-    ...metrics,
-    strategy_id: result.strategy_id || result.id,
-    strategy: result.strategy || null,
-    equity_curve: result.equity_curve || [],
-    monthly_returns: result.monthly_returns || {},
-    trades: result.trades || [],
-    ai_narrative: result.ai_narrative || "",
-  }
+/**
+ * Run a full backtest for a parsed strategy.
+ * @param {Object} strategy - ParsedStrategy object from parseStrategy response
+ * @returns {Promise<BacktestResponse>}
+ */
+export const runBacktest = async (strategy) => {
+  const { data } = await api.post("/run-backtest", { strategy })
+  return data
 }
 
-export const normalizeHistoryItem = (payload) => {
-  const result = normalizeBacktestResult(payload)
-  const strategy = result?.strategy || {}
-  return {
-    id: result?.strategy_id || payload?.id,
-    name: strategy.name || `${strategy.ticker || result?.ticker_used || "Strategy"} Backtest`,
-    ticker: strategy.ticker || result?.ticker_used || "-",
-    timeframe: strategy.timeframe || "1d",
-    asset_class: strategy.asset_class || "equity",
-    entry_rules: strategy.entry_rules || [],
-    exit_rules: strategy.exit_rules || [],
-    stop_loss_pct: strategy.stop_loss_pct ?? null,
-    take_profit_pct: strategy.take_profit_pct ?? null,
-    confidence_score: strategy.confidence_score ?? 1,
-    created_at: payload?.created_at || new Date().toISOString(),
-    favorited: Boolean(payload?.favorited),
-    in_progress: false,
-    results: result,
-  }
-}
+// ─── History ────────────────────────────────────────────────────────────────
 
-export const parseStrategy = (message, history = [], sessionId = null) =>
-  request("/parse-strategy", {
-    method: "POST",
-    body: JSON.stringify({
-      message,
-      conversation_history: history,
-      session_id: sessionId,
-    }),
-  })
-
-export const runBacktest = (strategy, sessionId = null) =>
-  request("/run-backtest", {
-    method: "POST",
-    body: JSON.stringify({ strategy, session_id: sessionId }),
-  })
-
+/**
+ * Fetch all saved backtest results for history page.
+ * @returns {Promise<Array>}
+ */
 export const getHistory = async () => {
-  const response = await request("/history")
-  return response.map(normalizeHistoryItem)
+  const { data } = await api.get("/history")
+  return data
 }
 
-export const clearHistoryApi = () =>
-  request("/history", {
-    method: "DELETE",
-  })
+/**
+ * Fetch a single full result by id (includes equity_curve and trades).
+ * @param {string} id
+ * @returns {Promise<Object>}
+ */
+export const getResultById = async (id) => {
+  const { data } = await api.get(`/history/${id}`)
+  return data
+}
+
+/**
+ * Delete a saved result.
+ * @param {string} id
+ * @returns {Promise<Object>}
+ */
+export const deleteResult = async (id) => {
+  const { data } = await api.delete(`/history/${id}`)
+  return data
+}
+
+export const clearHistory = async () => {
+  const { data } = await api.delete("/history")
+  return data
+}
+
+// alias for legacy import name used by SettingsPage
+export const clearHistoryApi = clearHistory
+
+// ─── Health check ───────────────────────────────────────────────────────────
+
+export const checkHealth = async () => {
+  const { data } = await api.get("/health")
+  return data
+}

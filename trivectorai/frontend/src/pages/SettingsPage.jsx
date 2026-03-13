@@ -11,7 +11,6 @@ export default function SettingsPage() {
   const settings = useStrategyStore((s) => s.settings)
   const updateSettings = useStrategyStore((s) => s.updateSettings)
   const clearHistory = useStrategyStore((s) => s.clearHistory)
-  const setCompareSelection = useStrategyStore((s) => s.setCompareSelection)
   const addToast = useStrategyStore((s) => s.addToast)
   const [confirmOpen, setConfirmOpen] = useState(false)
 
@@ -75,7 +74,6 @@ export default function SettingsPage() {
                 // Keep local reset even if backend history is unreachable.
               }
               clearHistory()
-              setCompareSelection([])
               setConfirmOpen(false)
               addToast("warning", "History deleted")
             }}

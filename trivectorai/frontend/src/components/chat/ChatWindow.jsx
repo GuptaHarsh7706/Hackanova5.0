@@ -8,14 +8,12 @@ import TypingIndicator from "./TypingIndicator"
 const hints = ["Golden cross on AAPL", "RSI bounce on BTC", "MACD on TSLA"]
 
 export default function ChatWindow({ onRunBacktest }) {
-  const messages = useStrategyStore((s) => s.messages)
-  const isLoading = useStrategyStore((s) => s.isLoading)
-  const parseStatus = useStrategyStore((s) => s.parseStatus)
-  const strategy = useStrategyStore((s) => s.strategy)
-  const missingFields = useStrategyStore((s) => s.missingFields)
-  const setPrefillMessage = useStrategyStore((s) => s.setPrefillMessage)
+  const messages        = useStrategyStore((s) => s.messages)
+  const isLoading       = useStrategyStore((s) => s.isLoading)
+  const backtestLoading = useStrategyStore((s) => s.backtestLoading)
+  const loadingText     = useStrategyStore((s) => s.loadingText)
 
-  const showEmpty = messages.length <= 1
+  const showEmpty = messages.length === 0
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -31,7 +29,6 @@ export default function ChatWindow({ onRunBacktest }) {
               <button
                 key={h}
                 className="rounded-full border border-[var(--border-default)] px-3 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
-                onClick={() => setPrefillMessage(h)}
               >
                 {h}
               </button>
@@ -50,26 +47,17 @@ export default function ChatWindow({ onRunBacktest }) {
       ) : (
         <div className="mx-auto flex max-w-3xl flex-col gap-3">
           {messages.map((msg) => (
-            <ChatMessage
-              key={msg.id}
-              message={msg}
-              strategy={strategy}
-              parseStatus={msg.role === "agent" ? parseStatus : null}
-              missingFields={missingFields}
-              onRunBacktest={onRunBacktest}
-            />
+            <ChatMessage key={msg.id} message={msg} onRunBacktest={onRunBacktest} />
           ))}
-          {isLoading ? <TypingIndicator /> : null}
+          {(isLoading || backtestLoading) ? <TypingIndicator text={loadingText} /> : null}
         </div>
       )}
 
-      {parseStatus === "ok" && strategy ? (
-        <div className="mx-auto mt-4 flex max-w-3xl justify-end">
-          <Badge variant="success" dot>
-            Parsed and ready
-          </Badge>
-        </div>
-      ) : null}
+      <div className="mx-auto mt-4 flex max-w-3xl justify-end">
+        <Badge variant="success" dot>
+          {isLoading || backtestLoading ? loadingText || "Working..." : "Awaiting input"}
+        </Badge>
+      </div>
     </div>
   )
 }

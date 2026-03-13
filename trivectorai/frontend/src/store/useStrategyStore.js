@@ -1,7 +1,12 @@
 import { create } from "zustand"
-import { persist } from "zustand/middleware"
-
-import { EXAMPLE_STRATEGIES, MOCK_CHAT_MESSAGES, MOCK_STRATEGIES } from "../data/mockData"
+import {
+  parseStrategy,
+  runBacktest,
+  getHistory,
+  getResultById,
+  deleteResult,
+  clearHistory,
+} from "../api/strategyApi"
 
 const initialSettings = {
   defaultTimeframe: "Daily",
@@ -19,138 +24,246 @@ const initialSettings = {
   compactMode: false,
 }
 
-export const useStrategyStore = create(
-  persist(
-    (set, get) => ({
-      onboardingSeen: false,
-      onboardingStep: 1,
-      prefillMessage: "",
+export const useStrategyStore = create((set, get) => ({
+  onboardingSeen: false,
+  onboardingStep: 1,
+  settings: initialSettings,
 
-      messages: [...MOCK_CHAT_MESSAGES],
-      conversationHistory: [],
-      isLoading: false,
-      isBacktestRunning: false,
-      sessionId: null,
+  // ── Chat state ──────────────────────────────────────────────────────────
+  messages: [],
+  isLoading: false,
+  loadingText: "",
+  prefillMessage: "",
 
-      strategy: null,
-      parseStatus: null,
-      missingFields: [],
-      currentBacktestResult: null,
-      showRawJson: false,
-      strategyPanelOpen: true,
-      mobileStrategySheetOpen: false,
+  // ── Strategy state ──────────────────────────────────────────────────────
+  currentStrategy: null,
+  parseStatus: null,        // "ok" | "needs_clarification" | "error" | null
+  missingFields: [],
+  sessionId: null,
 
-      toasts: [],
+  // ── Backtest state ──────────────────────────────────────────────────────
+  backtestResult: null,
+  backtestLoading: false,
+  currentResultId: null,
 
-      history: MOCK_STRATEGIES.map((s, i) => ({
-        ...s,
-        created_at: new Date(Date.now() - i * 172800000).toISOString(),
-        favorited: i === 0,
-        in_progress: i === 2,
-      })),
-      compare: {
-        selected: ["mock-1", "mock-2"],
-      },
+  // ── History state ───────────────────────────────────────────────────────
+  history: [],
+  historyLoading: false,
 
-      settings: initialSettings,
+  // ── Error state ─────────────────────────────────────────────────────────
+  error: null,
 
-      setOnboardingStep: (step) => set({ onboardingStep: step }),
-      completeOnboarding: () => set({ onboardingSeen: true }),
+  // ════════════════════════════════════════════════════════════════════════
+  // CHAT ACTIONS
+  // ════════════════════════════════════════════════════════════════════════
 
-      setPrefillMessage: (prefillMessage) => set({ prefillMessage }),
-      consumePrefillMessage: () => {
-        const value = get().prefillMessage
-        set({ prefillMessage: "" })
-        return value
-      },
+  addMessage: (role, content, meta = {}) => {
+    const msg = {
+      id:        Date.now() + Math.random(),
+      role,
+      content,
+      timestamp: new Date().toISOString(),
+      ...meta,
+    }
+    set((s) => ({ messages: [...s.messages, msg] }))
+    return msg
+  },
 
-      addMessage: (role, content, type = "text") => {
-        const item = {
-          id: Date.now() + Math.round(Math.random() * 1000),
-          role,
-          type,
-          content,
-          timestamp: new Date().toISOString(),
-        }
-        set((state) => ({ messages: [...state.messages, item] }))
-      },
-      setLoading: (isLoading) => set({ isLoading }),
-      setBacktestRunning: (isBacktestRunning) => set({ isBacktestRunning }),
-      setSessionId: (sessionId) => set({ sessionId }),
-      pushHistoryContext: (role, content) =>
-        set((state) => ({
-          conversationHistory: [...state.conversationHistory, { role, content }],
-        })),
-      updateStrategy: (strategy, parseStatus, missingFields = []) =>
-        set({ strategy, parseStatus, missingFields }),
-      setCurrentBacktestResult: (currentBacktestResult) => set({ currentBacktestResult }),
-      setHistory: (history) => set({ history }),
-      prependHistoryItem: (item) =>
-        set((state) => ({
-          history: [item, ...state.history.filter((existing) => existing.id !== item.id)].slice(0, 50),
-        })),
+  /**
+   * Main action: send user message → call agent → handle response.
+   * Called by ChatInput when user submits.
+   */
+  sendMessage: async (userText) => {
+    const { addMessage, messages, sessionId } = get()
 
-      toggleRawJson: () => set((s) => ({ showRawJson: !s.showRawJson })),
-      setStrategyPanelOpen: (strategyPanelOpen) => set({ strategyPanelOpen }),
-      setMobileStrategySheetOpen: (mobileStrategySheetOpen) => set({ mobileStrategySheetOpen }),
+    // 1. Add user message to chat immediately
+    addMessage("user", userText)
+    set({ isLoading: true, loadingText: "Parsing your strategy...", error: null })
 
-      addToast: (type, message) =>
-        set((state) => ({
-          toasts: [...state.toasts, { id: Date.now() + Math.random(), type, message }].slice(-3),
-        })),
-      dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+    // 2. Build conversation history from existing messages (for LLM context)
+    const conversationHistory = messages
+      .filter((m) => m.role === "user" || m.role === "agent")
+      .map((m) => ({
+        role:    m.role === "agent" ? "model" : "user",
+        content: m.content,
+      }))
 
-      setCompareA: (compareA) => set({ compareA }),
-      setCompareB: (compareB) => set({ compareB }),
-      setCompareSelection: (selected) =>
-        set((state) => ({
-          compare: {
-            ...state.compare,
-            selected,
-          },
-        })),
+    try {
+      // 3. Call the AI agent
+      const response = await parseStrategy(userText, conversationHistory)
 
-      updateSettings: (patch) =>
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            ...patch,
-          },
-        })),
+      // 4. Save session_id for continuity across turns
+      if (response.session_id) set({ sessionId: response.session_id })
 
-      setSetting: (key, value) =>
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            [key]: value,
-          },
-        })),
-      resetSettings: () => set({ settings: initialSettings }),
-      clearHistory: () => set({ history: [] }),
+      // 5. Update strategy state
+      set({
+        currentStrategy: response.strategy || null,
+        parseStatus:     response.status,
+        missingFields:   response.missing_fields || [],
+      })
 
-      resetChat: () =>
+      // 6. Add agent reply to chat
+      if (response.status === "ok") {
+        addMessage("agent", response.agent_message, {
+          type:     "confirmation",
+          strategy: response.strategy,
+        })
+      } else if (response.status === "needs_clarification") {
+        addMessage("agent", response.agent_message, {
+          type:          "clarification",
+          missingFields: response.missing_fields,
+          strategy:      response.strategy,
+        })
+      } else {
+        addMessage("agent", response.agent_message || "Something went wrong.", {
+          type: "error",
+        })
+      }
+
+    } catch (err) {
+      const errMsg = err.message || "Connection failed."
+      set({ error: errMsg })
+      addMessage("agent", errMsg, { type: "error" })
+    } finally {
+      set({ isLoading: false, loadingText: "" })
+    }
+  },
+
+  // ════════════════════════════════════════════════════════════════════════
+  // BACKTEST ACTIONS
+  // ════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Run backtest for currentStrategy. Called by "Run Backtest" button.
+   * Navigates to results page after success (pass navigate fn from component).
+   */
+  runBacktest: async (navigate) => {
+    const { currentStrategy, addMessage } = get()
+    if (!currentStrategy) return
+
+    set({ backtestLoading: true, loadingText: "Running backtest..." })
+    addMessage("agent", `Running backtest for **${currentStrategy.ticker}**... This may take a few seconds.`)
+
+    try {
+      const response = await runBacktest(currentStrategy)
+
+      if (response.status === "ok" && response.result) {
+        const result    = response.result
+        const resultId  = `${currentStrategy.ticker}_${Date.now()}`
+
         set({
-          messages: [...MOCK_CHAT_MESSAGES],
-          conversationHistory: [],
-          isBacktestRunning: false,
-          sessionId: null,
-          strategy: null,
-          parseStatus: null,
-          missingFields: [],
-          currentBacktestResult: null,
-          showRawJson: false,
-        }),
+          backtestResult:  result,
+          currentResultId: resultId,
+          backtestLoading: false,
+          loadingText:     "",
+        })
 
-      exampleStrategies: EXAMPLE_STRATEGIES,
-    }),
-    {
-      name: "trivectorai-phase2-store",
-      partialize: (state) => ({
-        onboardingSeen: state.onboardingSeen,
-        history: state.history,
-        sessionId: state.sessionId,
-        settings: state.settings,
-      }),
-    },
-  ),
-)
+        addMessage("agent",
+          `Backtest complete! **${result.metrics.total_return_pct > 0 ? "+" : ""}${result.metrics.total_return_pct}%** total return over ${result.data_period}.
+
+${result.ai_narrative || ""}`,
+          { type: "backtest_complete", resultId }
+        )
+
+        if (navigate) navigate(`/app/results/${resultId}`)
+      } else {
+        throw new Error(response.message || "Backtest failed.")
+      }
+    } catch (err) {
+      set({ backtestLoading: false, loadingText: "" })
+      addMessage("agent", `Backtest failed: ${err.message}`, { type: "error" })
+    }
+  },
+
+  // ════════════════════════════════════════════════════════════════════════
+  // HISTORY ACTIONS
+  // ════════════════════════════════════════════════════════════════════════
+
+  fetchHistory: async () => {
+    set({ historyLoading: true })
+    try {
+      const history = await getHistory()
+      set({ history, historyLoading: false })
+    } catch (err) {
+      set({ historyLoading: false, error: err.message })
+    }
+  },
+
+  fetchResultById: async (id) => {
+    set({ backtestLoading: true })
+    try {
+      const result = await getResultById(id)
+      set({ backtestResult: result, currentResultId: id, backtestLoading: false })
+      return result
+    } catch (err) {
+      set({ backtestLoading: false, error: err.message })
+      return null
+    }
+  },
+
+  deleteHistoryItem: async (id) => {
+    try {
+      await deleteResult(id)
+      set((s) => ({ history: s.history.filter((h) => h.id !== id) }))
+    } catch (err) {
+      set({ error: err.message })
+    }
+  },
+
+  clearHistory: async () => {
+    try {
+      await clearHistory()
+    } catch {
+      // ignore
+    }
+    set({ history: [] })
+  },
+
+  setOnboardingSeen: (seen) => set({ onboardingSeen: seen }),
+  setOnboardingStep: (step) => set({ onboardingStep: step }),
+  completeOnboarding: () => set({ onboardingSeen: true }),
+  resetOnboarding: () => set({ onboardingSeen: false, onboardingStep: 1 }),
+
+  updateSettings: (patch) =>
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        ...patch,
+      },
+    })),
+  setSetting: (key, value) =>
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        [key]: value,
+      },
+    })),
+  resetSettings: () => set({ settings: initialSettings }),
+
+  // ════════════════════════════════════════════════════════════════════════
+  // UTILITY ACTIONS
+  // ════════════════════════════════════════════════════════════════
+
+  resetChat: () => set({
+    messages:        [],
+    currentStrategy: null,
+    parseStatus:     null,
+    missingFields:   [],
+    backtestResult:  null,
+    currentResultId: null,
+    error:           null,
+    sessionId:       null,
+    isLoading:       false,
+    loadingText:     "",
+  }),
+
+  setError:   (error)   => set({ error }),
+  clearError: ()        => set({ error: null }),
+
+  setPrefillMessage: (prefillMessage) => set({ prefillMessage }),
+  consumePrefillMessage: () => {
+    const value = get().prefillMessage
+    set({ prefillMessage: "" })
+    return value
+  },
+}))

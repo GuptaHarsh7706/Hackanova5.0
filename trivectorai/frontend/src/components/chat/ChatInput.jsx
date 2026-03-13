@@ -1,20 +1,15 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { ChevronDown, SendHorizonal } from "lucide-react"
 
 import { useStrategyStore } from "../../store/useStrategyStore"
 import Button from "../ui/Button"
 
+const EXAMPLES = ["Golden cross on AAPL", "RSI bounce on BTC", "MACD on TSLA"]
+
 export default function ChatInput({ onSubmit }) {
   const [value, setValue] = useState("")
   const [openExamples, setOpenExamples] = useState(false)
   const isLoading = useStrategyStore((s) => s.isLoading)
-  const exampleStrategies = useStrategyStore((s) => s.exampleStrategies)
-  const consumePrefillMessage = useStrategyStore((s) => s.consumePrefillMessage)
-
-  useEffect(() => {
-    const prefill = consumePrefillMessage()
-    if (prefill) setValue(prefill)
-  }, [consumePrefillMessage])
 
   const over200 = useMemo(() => value.length > 200, [value.length])
 
@@ -55,7 +50,7 @@ export default function ChatInput({ onSubmit }) {
               </button>
               {openExamples ? (
                 <div className="absolute bottom-6 left-0 z-30 w-80 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1">
-                  {exampleStrategies.map((item) => (
+                  {EXAMPLES.map((item) => (
                     <button
                       key={item}
                       className="block w-full rounded-md px-2 py-2 text-left text-xs hover:bg-[var(--bg-surface)]"

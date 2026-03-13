@@ -1,47 +1,47 @@
 import { useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 
-import { getHistory } from "../api/strategyApi"
 import HistoryGrid from "../components/history/HistoryGrid"
 import FilterDrawer from "../components/history/FilterDrawer"
 import Input from "../components/ui/Input"
 import { useStrategyStore } from "../store/useStrategyStore"
 
 export default function HistoryPage() {
-  const items = useStrategyStore((s) => s.history)
-  const setHistory = useStrategyStore((s) => s.setHistory)
-  const addToast = useStrategyStore((s) => s.addToast)
+  const navigate = useNavigate()
+  const { history, historyLoading, fetchHistory, deleteHistoryItem } = useStrategyStore()
   const [query, setQuery] = useState("")
   const [sort, setSort] = useState("recent")
   const [openFilter, setOpenFilter] = useState(false)
 
   useEffect(() => {
-    let active = true
-    getHistory()
-      .then((remoteItems) => {
-        if (active && remoteItems.length) setHistory(remoteItems)
-      })
-      .catch(() => {
-        if (active) addToast("warning", "History service unavailable. Showing local data.")
-      })
-    return () => {
-      active = false
-    }
-  }, [addToast, setHistory])
+    fetchHistory()
+  }, [])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let list = items.filter((i) => i.name.toLowerCase().includes(q) || i.ticker.toLowerCase().includes(q))
+    let list = history.filter((i) => i.name.toLowerCase().includes(q) || i.ticker.toLowerCase().includes(q))
     if (sort === "recent") list = [...list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     if (sort === "name") list = [...list].sort((a, b) => a.name.localeCompare(b.name))
     return list
-  }, [items, query, sort])
+  }, [history, query, sort])
+
+  if (historyLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <div className="mb-2 text-lg font-semibold">Loading history...</div>
+          <div className="text-sm text-[var(--text-secondary)]">Please wait while we fetch your past backtests.</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold">Strategy History</h2>
-          <p className="text-sm text-[var(--text-secondary)]">{items.length} saved strategies</p>
+          <p className="text-sm text-[var(--text-secondary)]">{history.length} saved strategies</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Input placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} className="w-52" />
@@ -52,7 +52,11 @@ export default function HistoryPage() {
           </select>
         </div>
       </div>
-      <HistoryGrid items={filtered} />
+      <HistoryGrid
+        items={filtered}
+        onDelete={deleteHistoryItem}
+        onOpen={(item) => navigate(`/app/results/${item.id}`)}
+      />
       <FilterDrawer open={openFilter} onClose={() => setOpenFilter(false)} />
     </div>
   )

@@ -33,18 +33,37 @@ def save_memory(session_id: str, data: dict):
         )
 
 
+def get_result_by_id(result_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, data, created_at FROM results WHERE id=?", (result_id,)
+        ).fetchone()
+    if not row:
+        return None
+    result = json.loads(row["data"])
+    result["id"] = row["id"]
+    result["created_at"] = row["created_at"]
+    return result
+
+
+def delete_result(result_id: str) -> bool:
+    with get_conn() as conn:
+        cursor = conn.execute("DELETE FROM results WHERE id=?", (result_id,))
+    return cursor.rowcount > 0
+
+
 def get_all_results() -> list:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, data, created_at FROM results ORDER BY created_at DESC LIMIT 50"
+            "SELECT id, data, created_at FROM results ORDER BY created_at DESC LIMIT 100"
         ).fetchall()
-    output = []
+    results = []
     for row in rows:
         item = json.loads(row["data"])
         item["id"] = row["id"]
         item["created_at"] = row["created_at"]
-        output.append(item)
-    return output
+        results.append(item)
+    return results
 
 
 def clear_all_results():

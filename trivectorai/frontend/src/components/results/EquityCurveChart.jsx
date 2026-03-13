@@ -12,8 +12,8 @@ const buildPath = (points, key = "value") => {
     .join(" ")
 }
 
-export default function EquityCurveChart({ points = [] }) {
-  const clipped = points.slice(-120)
+export default function EquityCurveChart({ data = [] }) {
+  const clipped = data.slice(-120)
   const strategyPath = buildPath(clipped)
   const benchmarkPath = buildPath(clipped, "benchmark")
 
