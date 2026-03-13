@@ -1,11 +1,14 @@
-export default function AdditionalMetrics({ r }) {
+const fmtPct = (v) => (v == null ? "-" : `${Number(v).toFixed(2)}%`)
+const fmtUsd = (v) => (v == null ? "-" : `$${Number(v).toFixed(2)}/trade`)
+
+export default function AdditionalMetrics({ metrics = {} }) {
   const rows = [
-    ["Avg Win", `${r.avg_win_pct}%`],
-    ["Avg Loss", `${r.avg_loss_pct}%`],
-    ["Largest Win", `${r.largest_win_pct}%`],
-    ["Largest Loss", `${r.largest_loss_pct}%`],
-    ["Profit Factor", r.profit_factor],
-    ["Expectancy", `$${r.expectancy_usd}/trade`],
+    ["Avg Win", fmtPct(metrics.avg_win_pct)],
+    ["Avg Loss", fmtPct(metrics.avg_loss_pct)],
+    ["Largest Win", fmtPct(metrics.largest_win_pct)],
+    ["Largest Loss", fmtPct(metrics.largest_loss_pct)],
+    ["Profit Factor", metrics.profit_factor ?? "-"],
+    ["Expectancy", fmtUsd(metrics.expectancy_usd)],
   ]
 
   return (

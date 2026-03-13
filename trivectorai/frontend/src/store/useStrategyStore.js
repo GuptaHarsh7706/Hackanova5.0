@@ -50,6 +50,21 @@ export const useStrategyStore = create((set, get) => ({
   history: [],
   historyLoading: false,
 
+  // ── Backend health state ─────────────────────────────────────────────────
+  backendStatus: "unknown",   // "unknown" | "online" | "offline"
+  backendVersion: null,
+
+  checkBackendHealth: async () => {
+    try {
+      const { checkHealth } = await import("../api/strategyApi")
+      const data = await checkHealth()
+      console.log("%c[TriVector] health", "color:#22c55e;font-weight:600", data)
+      set({ backendStatus: data.db === "connected" ? "online" : "degraded", backendVersion: data.version })
+    } catch {
+      set({ backendStatus: "offline" })
+    }
+  },
+
   // ── Error state ─────────────────────────────────────────────────────────
   error: null,
 
@@ -152,10 +167,10 @@ export const useStrategyStore = create((set, get) => ({
 
       if (response.status === "ok" && response.result) {
         const result    = response.result
-        const resultId  = `${currentStrategy.ticker}_${Date.now()}`
+        const resultId  = result.strategy_id || result.id || `${currentStrategy.ticker}_${Date.now()}`
 
         set({
-          backtestResult:  result,
+          backtestResult:  { ...result, id: resultId },
           currentResultId: resultId,
           backtestLoading: false,
           loadingText:     "",

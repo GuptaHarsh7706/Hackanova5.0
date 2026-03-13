@@ -2,35 +2,51 @@ import axios from "axios"
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api"
 
+// ─── Logger helpers ─────────────────────────────────────────────────────────
+const tag  = (label, color) => [`%c[TriVector] ${label}`, `color:${color};font-weight:600`]
+const info  = (label, ...args) => console.log(...tag(label, "#7f77dd"), ...args)
+const ok    = (label, ...args) => console.log(...tag(label, "#22c55e"), ...args)
+const warn  = (label, ...args) => console.warn(...tag(label, "#f59e0b"), ...args)
+const err   = (label, ...args) => console.error(...tag(label, "#ef4444"), ...args)
+
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 60000,       // 60s — backtest can take a while
-  headers: { "Content-Type": "application/json" }
+  timeout: 60000,
+  headers: { "Content-Type": "application/json" },
 })
 
-// ─── Request interceptor: attach session_id from localStorage if present ───
+// ─── Request interceptor: attach session_id + timing ────────────────────────
 api.interceptors.request.use((config) => {
   const sessionId = localStorage.getItem("trivector_session_id")
   if (sessionId && config.data) {
     config.data = { ...config.data, session_id: sessionId }
   }
+  config.metadata = { startTime: Date.now() }
+  info(`→ ${config.method?.toUpperCase()} ${config.url}`, config.data ?? "")
   return config
 })
 
-// ─── Response interceptor: save session_id when backend returns one ───
+// ─── Response interceptor: log result + save session_id ─────────────────────
 api.interceptors.response.use(
   (response) => {
+    const ms = Date.now() - (response.config.metadata?.startTime ?? Date.now())
+    ok(`← ${response.config.method?.toUpperCase()} ${response.config.url}  ${response.status}  (${ms}ms)`, response.data)
     const sessionId = response.data?.session_id
-    if (sessionId) localStorage.setItem("trivector_session_id", sessionId)
+    if (sessionId) {
+      localStorage.setItem("trivector_session_id", sessionId)
+      info("session_id saved", sessionId)
+    }
     return response
   },
   (error) => {
+    const ms = Date.now() - (error.config?.metadata?.startTime ?? Date.now())
     const message =
       error.response?.data?.detail ||
       error.response?.data?.message ||
       (error.code === "ECONNABORTED" ? "Request timed out. The backtest may be taking too long." :
        error.code === "ERR_NETWORK"  ? "Cannot connect to backend. Is it running on port 8000?" :
        "An unexpected error occurred.")
+    err(`✗ ${error.config?.method?.toUpperCase()} ${error.config?.url}  ${error.response?.status ?? "ERR"}  (${ms}ms)`, message)
     return Promise.reject(new Error(message))
   }
 )

@@ -15,13 +15,21 @@ export default function HistoryPage() {
 
   useEffect(() => {
     fetchHistory()
+    console.log("%c[TriVector] HistoryPage mounted — fetching history", "color:#7f77dd;font-weight:600")
   }, [])
+
+  // Safe label extraction — backend returns strategy.ticker, not item.name
+  const getLabel = (item) =>
+    item?.strategy?.ticker || item?.ticker_used || item?.ticker || item?.name || "Strategy"
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let list = history.filter((i) => i.name.toLowerCase().includes(q) || i.ticker.toLowerCase().includes(q))
+    let list = history.filter((i) => {
+      const label = getLabel(i).toLowerCase()
+      return label.includes(q) || (i?.data_period || "").toLowerCase().includes(q)
+    })
     if (sort === "recent") list = [...list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    if (sort === "name") list = [...list].sort((a, b) => a.name.localeCompare(b.name))
+    if (sort === "name")   list = [...list].sort((a, b) => getLabel(a).localeCompare(getLabel(b)))
     return list
   }, [history, query, sort])
 
