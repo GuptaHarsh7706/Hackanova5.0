@@ -53,6 +53,9 @@ export const useStrategyStore = create((set, get) => ({
   // ── Error state ─────────────────────────────────────────────────────────
   error: null,
 
+  // ── Toast state ─────────────────────────────────────────────────────────
+  toasts: [],
+
   // ════════════════════════════════════════════════════════════════════════
   // CHAT ACTIONS
   // ════════════════════════════════════════════════════════════════════════
@@ -259,6 +262,22 @@ ${result.ai_narrative || ""}`,
 
   setError:   (error)   => set({ error }),
   clearError: ()        => set({ error: null }),
+
+  addToast: (type = "info", message = "") => {
+    if (!message) return null
+    const toast = {
+      id: Date.now() + Math.random(),
+      type,
+      message,
+    }
+    set((s) => ({ toasts: [...s.toasts, toast] }))
+    return toast.id
+  },
+
+  dismissToast: (id) =>
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  clearToasts: () => set({ toasts: [] }),
 
   setPrefillMessage: (prefillMessage) => set({ prefillMessage }),
   consumePrefillMessage: () => {

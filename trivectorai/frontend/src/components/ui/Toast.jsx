@@ -36,10 +36,12 @@ export function ToastItem({ toast, onDismiss }) {
   )
 }
 
-export default function Toast({ toasts, onDismiss }) {
+export default function Toast({ toasts = [], onDismiss = () => {} }) {
+  const safeToasts = Array.isArray(toasts) ? toasts : []
+
   return (
     <div className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2">
-      {toasts.slice(-3).map((t) => (
+      {safeToasts.slice(-3).map((t) => (
         <ToastItem key={t.id} toast={t} onDismiss={onDismiss} />
       ))}
     </div>
