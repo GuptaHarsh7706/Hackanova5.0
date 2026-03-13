@@ -1,24 +1,75 @@
-import { useEffect, useRef } from "react"
+import { Lightbulb } from "lucide-react"
 
+import { useStrategyStore } from "../../store/useStrategyStore"
+import Badge from "../ui/Badge"
 import ChatMessage from "./ChatMessage"
 import TypingIndicator from "./TypingIndicator"
 
-export default function ChatWindow({ messages, isLoading }) {
-  const endRef = useRef(null)
+const hints = ["Golden cross on AAPL", "RSI bounce on BTC", "MACD on TSLA"]
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
-  }, [messages, isLoading])
+export default function ChatWindow({ onRunBacktest }) {
+  const messages = useStrategyStore((s) => s.messages)
+  const isLoading = useStrategyStore((s) => s.isLoading)
+  const parseStatus = useStrategyStore((s) => s.parseStatus)
+  const strategy = useStrategyStore((s) => s.strategy)
+  const missingFields = useStrategyStore((s) => s.missingFields)
+  const setPrefillMessage = useStrategyStore((s) => s.setPrefillMessage)
+
+  const showEmpty = messages.length <= 1
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-4xl py-3">
-        {messages.map((message) => (
-          <ChatMessage key={message.id} message={message} />
-        ))}
-        {isLoading && <TypingIndicator />}
-        <div ref={endRef} />
-      </div>
+    <div className="flex-1 overflow-y-auto px-4 py-4">
+      {showEmpty ? (
+        <div className="mx-auto mt-10 max-w-2xl space-y-6 text-center">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[var(--brand-900)]/40 text-2xl font-bold">T</div>
+          <div>
+            <h2 className="text-2xl font-semibold">Describe your trading strategy</h2>
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">I will parse it into structured rules and run a backtest.</p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-2">
+            {hints.map((h) => (
+              <button
+                key={h}
+                className="rounded-full border border-[var(--border-default)] px-3 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                onClick={() => setPrefillMessage(h)}
+              >
+                {h}
+              </button>
+            ))}
+          </div>
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4 text-left">
+            <p className="mb-2 flex items-center gap-2 text-sm"><Lightbulb className="h-4 w-4 text-[var(--warning)]" />Tips for best results</p>
+            <ul className="list-disc space-y-1 pl-4 text-xs text-[var(--text-secondary)]">
+              <li>Name the asset</li>
+              <li>Specify timeframe</li>
+              <li>Include entry and exit conditions</li>
+              <li>Add stop loss</li>
+            </ul>
+          </div>
+        </div>
+      ) : (
+        <div className="mx-auto flex max-w-3xl flex-col gap-3">
+          {messages.map((msg) => (
+            <ChatMessage
+              key={msg.id}
+              message={msg}
+              strategy={strategy}
+              parseStatus={msg.role === "agent" ? parseStatus : null}
+              missingFields={missingFields}
+              onRunBacktest={onRunBacktest}
+            />
+          ))}
+          {isLoading ? <TypingIndicator /> : null}
+        </div>
+      )}
+
+      {parseStatus === "ok" && strategy ? (
+        <div className="mx-auto mt-4 flex max-w-3xl justify-end">
+          <Badge variant="success" dot>
+            Parsed and ready
+          </Badge>
+        </div>
+      ) : null}
     </div>
   )
 }

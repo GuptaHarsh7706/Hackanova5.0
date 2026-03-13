@@ -1,91 +1,79 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { SendHorizonal, X } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { ChevronDown, SendHorizonal } from "lucide-react"
 
+import { useStrategyStore } from "../../store/useStrategyStore"
 import Button from "../ui/Button"
 
-const PLACEHOLDERS = [
-  "e.g. Buy when 50 SMA crosses above 200 SMA on AAPL...",
-  "e.g. RSI below 30 on BTC, sell when RSI crosses above 70...",
-  "e.g. Golden cross strategy with 2% stop loss on TSLA...",
-]
-
-export default function ChatInput({ isLoading, onSubmit }) {
+export default function ChatInput({ onSubmit }) {
   const [value, setValue] = useState("")
-  const [placeholderIndex, setPlaceholderIndex] = useState(0)
-  const textRef = useRef(null)
+  const [openExamples, setOpenExamples] = useState(false)
+  const isLoading = useStrategyStore((s) => s.isLoading)
+  const exampleStrategies = useStrategyStore((s) => s.exampleStrategies)
+  const consumePrefillMessage = useStrategyStore((s) => s.consumePrefillMessage)
 
   useEffect(() => {
-    const t = setInterval(() => {
-      setPlaceholderIndex((i) => (i + 1) % PLACEHOLDERS.length)
-    }, 2800)
-    return () => clearInterval(t)
-  }, [])
+    const prefill = consumePrefillMessage()
+    if (prefill) setValue(prefill)
+  }, [consumePrefillMessage])
 
-  const placeholder = useMemo(() => PLACEHOLDERS[placeholderIndex], [placeholderIndex])
-
-  const resize = () => {
-    if (!textRef.current) {
-      return
-    }
-    textRef.current.style.height = "auto"
-    const max = 112
-    textRef.current.style.height = `${Math.min(textRef.current.scrollHeight, max)}px`
-    textRef.current.style.overflowY = textRef.current.scrollHeight > max ? "auto" : "hidden"
-  }
+  const over200 = useMemo(() => value.length > 200, [value.length])
 
   const submit = () => {
-    const trimmed = value.trim()
-    if (!trimmed || isLoading) {
-      return
-    }
-    onSubmit(trimmed)
+    if (!value.trim() || isLoading) return
+    onSubmit(value)
     setValue("")
-    if (textRef.current) {
-      textRef.current.style.height = "auto"
-    }
-  }
-
-  const onKeyDown = (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey || !e.shiftKey)) {
-      e.preventDefault()
-      submit()
-    }
+    setOpenExamples(false)
   }
 
   return (
-    <div className="border-t border-surface-border p-4">
-      <div className="rounded-2xl border border-surface-border bg-surface-card p-3">
-        <textarea
-          ref={textRef}
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value)
-            resize()
-          }}
-          onKeyDown={onKeyDown}
-          disabled={isLoading}
-          rows={1}
-          className="max-h-28 w-full resize-none bg-transparent text-sm text-gray-100 outline-none placeholder:text-gray-500"
-          placeholder={placeholder}
-        />
-        <div className="mt-3 flex items-center justify-between">
-          <div>
-            {value && (
-              <button
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-surface hover:text-gray-100"
-                onClick={() => setValue("")}
-                type="button"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-          <Button onClick={submit} disabled={isLoading || !value.trim()}>
-            <SendHorizonal className="mr-2 h-4 w-4" />
-            Send
+    <div className="sticky bottom-14 z-20 border-t border-[var(--border-default)] bg-[var(--bg-base)] p-3 md:bottom-0">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-2 focus-within:shadow-[0_0_0_2px_rgba(108,99,212,0.28)]">
+        <div className="relative">
+          <textarea
+            className="min-h-[84px] w-full resize-none bg-transparent p-2 pr-12 text-sm text-[var(--text-primary)] outline-none disabled:opacity-50"
+            placeholder="Describe your trading strategy..."
+            value={value}
+            disabled={isLoading}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit()
+            }}
+          />
+          <Button className="absolute bottom-2 right-2 h-9 w-9 rounded-full p-0" loading={isLoading} onClick={submit}>
+            <SendHorizonal className="h-4 w-4" />
           </Button>
         </div>
-        <p className="mt-2 text-xs text-gray-500">Press Ctrl+Enter (or Cmd+Enter) to send</p>
+
+        <div className="mt-1 flex items-center justify-between text-xs text-[var(--text-secondary)]">
+          <div className="flex items-center gap-3">
+            <button className="opacity-40" disabled>
+              Attach context
+            </button>
+            <div className="relative">
+              <button className="inline-flex items-center gap-1" onClick={() => setOpenExamples((s) => !s)}>
+                Examples <ChevronDown className="h-3 w-3" />
+              </button>
+              {openExamples ? (
+                <div className="absolute bottom-6 left-0 z-30 w-80 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1">
+                  {exampleStrategies.map((item) => (
+                    <button
+                      key={item}
+                      className="block w-full rounded-md px-2 py-2 text-left text-xs hover:bg-[var(--bg-surface)]"
+                      onClick={() => {
+                        setValue(item)
+                        setOpenExamples(false)
+                      }}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div>{over200 ? `${value.length} chars` : "Cmd+Enter to send"}</div>
+        </div>
       </div>
     </div>
   )

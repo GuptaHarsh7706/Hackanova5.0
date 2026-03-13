@@ -1,34 +1,26 @@
-import clsx from "clsx"
 import ReactMarkdown from "react-markdown"
 
-export default function ChatMessage({ message }) {
+import ClarificationCard from "./ClarificationCard"
+import ConfirmationCard from "./ConfirmationCard"
+
+export default function ChatMessage({ message, strategy, parseStatus, missingFields, onRunBacktest }) {
   const isUser = message.role === "user"
 
   return (
-    <div className={clsx("group flex px-4 py-2", isUser ? "justify-end" : "justify-start")}>
-      {!isUser && (
-        <div className="mr-2 mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white">
-          TV
-        </div>
-      )}
+    <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={clsx(
-          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed md:max-w-[72%]",
+        className={`animate-message-in max-w-[80%] rounded-2xl border px-3 py-2 text-sm ${
           isUser
-            ? "rounded-br-sm bg-brand-600 text-white"
-            : "rounded-bl-sm border border-surface-border bg-surface-card text-gray-100",
-        )}
+            ? "border-[var(--brand-700)] bg-[var(--brand-900)] text-[var(--brand-100)]"
+            : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+        }`}
       >
-        {isUser ? (
-          <p className="whitespace-pre-wrap">{message.content}</p>
-        ) : (
-          <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-code:text-brand-100">
-            <ReactMarkdown>{message.content}</ReactMarkdown>
-          </div>
-        )}
-        <p className="mt-1 hidden text-[10px] text-gray-400 group-hover:block">
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </p>
+        {!isUser ? <span className="mb-1 block text-xs font-semibold text-[var(--brand-200)]">TV</span> : null}
+        <ReactMarkdown className="prose prose-invert max-w-none text-sm">{message.content}</ReactMarkdown>
+        <p className="mt-1 text-right text-[11px] text-[var(--text-muted)]">{new Date(message.timestamp).toLocaleTimeString()}</p>
+
+        {!isUser && parseStatus === "ok" ? <ConfirmationCard strategy={strategy} onRunBacktest={onRunBacktest} /> : null}
+        {!isUser && parseStatus === "needs_clarification" ? <ClarificationCard missingFields={missingFields} /> : null}
       </div>
     </div>
   )

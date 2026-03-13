@@ -1,22 +1,30 @@
-# TriVectorAI - Phase 1
+# TriVectorAI - Phase 3
 
-Agentic Backtesting Tool: UI + LLM Strategy Parser.
+Agentic strategy parsing and backtesting tool with a React frontend, FastAPI backend, SQLite persistence, and a tool-driven Gemini workflow.
 
-## What Phase 1 Includes
+## What Phase 3 Includes
 
-- React + Vite + Tailwind chat-style strategy parser UI
-- FastAPI backend with `/api/parse-strategy` and `/api/health`
-- Google Gemini Flash integration for English -> structured strategy JSON
-- Clarification loop for missing required fields
-- Live strategy JSON preview panel
-- Error handling for network, timeout, validation, and service errors
+- React + Vite + Tailwind multi-route frontend
+- FastAPI backend with parse, backtest, history, and health routes
+- Agent memory persisted by session in SQLite
+- Structured strategy parsing with Gemini-backed and deterministic fallback flows
+- Historical backtests with indicator generation, signal building, and result formatting
+- Results dashboard wired to live backend responses
+- Strategy history and compare views backed by stored backtest results
 
 ## Project Structure
 
 ```text
 trivectorai/
 ├── backend/
+│   ├── agent/
+│   ├── database/
+│   ├── engine/
+│   ├── models/
+│   ├── prompts/
+│   └── routes/
 ├── frontend/
+│   └── src/
 └── README.md
 ```
 
@@ -25,11 +33,17 @@ trivectorai/
 ```bash
 # Backend setup
 cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+# source .venv/bin/activate
+
 pip install -r requirements.txt
-cp .env.example .env
-# Add your GEMINI_API_KEY to .env
+copy .env.example .env
+# Add your GEMINI_API_KEY to .env if you want Gemini parsing and AI narration.
+# Without it, the app falls back to deterministic parsing and templated analysis.
+
 uvicorn main:app --reload
 
 # Frontend setup (separate terminal)
@@ -37,11 +51,17 @@ cd frontend
 npm install
 npm run dev
 
-# App runs at:
-# Frontend: http://localhost:5173
-# Backend:  http://localhost:8000
-# API docs: http://localhost:8000/docs
+# Optional frontend env override
+# VITE_API_BASE_URL=http://localhost:8000
 ```
+
+## API Surface
+
+- `POST /api/parse-strategy`
+- `POST /api/run-backtest`
+- `GET /api/history`
+- `DELETE /api/history`
+- `GET /api/health`
 
 ## Example Strategies to Test
 
@@ -54,9 +74,9 @@ npm run dev
 | "Bollinger Band breakout - buy when price closes above upper band on NVDA" | BBANDS, PRICE closes above |
 | "Buy when 50 EMA crosses above 200 EMA AND RSI is below 60" | Multi-condition AND logic |
 | "Short EURUSD when 20 SMA crosses below 50 SMA on 4h chart" | short_allowed: true, forex |
-```
 
 ## Notes
 
-- "Run Backtest" is disabled in Phase 1 and marked as coming in Phase 2.
-- Type `reset` in chat or click "New Strategy" to clear state.
+- `GET /api/history` returns stored backtest results, which the frontend normalizes into history cards and comparison items.
+- If market data download fails, the backend falls back to synthetic OHLCV data so the workflow still executes offline.
+- If `vectorbt` is unavailable at runtime, the backend falls back to a manual portfolio simulation path.

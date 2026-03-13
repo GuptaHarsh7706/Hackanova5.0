@@ -39,34 +39,22 @@ class IndicatorParams(BaseModel):
 class TradingRule(BaseModel):
     indicator: IndicatorType
     condition: ConditionType
-    value: Union[float, str, None] = None  # number OR another indicator ref e.g. "SMA_200"
+    value: Union[float, str, None] = None
     params: IndicatorParams = Field(default_factory=IndicatorParams)
-    logic_operator: Literal["AND", "OR", "NONE"] = "NONE"  # for chaining multiple rules
+    logic_operator: Literal["AND", "OR", "NONE"] = "NONE"
 
 
 class ParsedStrategy(BaseModel):
     ticker: Optional[str] = None
     timeframe: Literal["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"] = "1d"
     asset_class: Optional[Literal["equity", "crypto", "forex", "commodity"]] = None
-    entry_rules: list[TradingRule] = []
-    exit_rules: list[TradingRule] = []
-    position_size: float = 1.0  # fraction of capital, 0.01-1.0
+    entry_rules: list[TradingRule] = Field(default_factory=list)
+    exit_rules: list[TradingRule] = Field(default_factory=list)
+    position_size: float = 1.0
     stop_loss_pct: Optional[float] = None
     take_profit_pct: Optional[float] = None
-    max_hold_days: Optional[int] = None
     short_allowed: bool = False
-    missing_fields: list[str] = []
-    confidence_score: float = 1.0  # LLM self-reported 0-1
+    missing_fields: list[str] = Field(default_factory=list)
+    confidence_score: float = 1.0
     raw_input: str = ""
 
-
-class ParseRequest(BaseModel):
-    message: str
-    conversation_history: list[dict] = []  # [{role, content}, ...]
-
-
-class ParseResponse(BaseModel):
-    status: Literal["ok", "needs_clarification", "error"]
-    strategy: Optional[ParsedStrategy] = None
-    agent_message: str = ""  # natural language reply shown in chat
-    missing_fields: list[str] = []

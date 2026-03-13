@@ -1,3 +1,142 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+	--bg-base: #0a0a0f;
+	--bg-surface: #111118;
+	--bg-elevated: #1a1a24;
+	--bg-overlay: #22223080;
+
+	--brand-50: #eeedfe;
+	--brand-100: #cecbf6;
+	--brand-200: #afa9ec;
+	--brand-400: #7f77dd;
+	--brand-500: #6c63d4;
+	--brand-600: #534ab7;
+	--brand-700: #3d3689;
+	--brand-900: #26215c;
+
+	--teal-400: #2dd4bf;
+	--teal-600: #0f9e8a;
+
+	--success: #22c55e;
+	--warning: #f59e0b;
+	--danger: #ef4444;
+	--info: #3b82f6;
+
+	--text-primary: #f0f0f8;
+	--text-secondary: #8e8ea8;
+	--text-muted: #4a4a62;
+
+	--border-subtle: #1e1e2e;
+	--border-default: #2a2a3d;
+	--border-strong: #3d3d56;
+
+	--shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+	--shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+	--shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+	--shadow-brand: 0 0 20px rgba(107, 99, 212, 0.25);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--bg-base);
+	color: var(--text-primary);
+	font-family: Inter, system-ui, sans-serif;
+	scroll-behavior: smooth;
+}
+
+.micro {
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	font-weight: 500;
+}
+
+.transition-ui {
+	transition: all 150ms ease;
+}
+
+.card-lift:hover {
+	transform: translateY(-1px);
+	transition: transform 200ms ease;
+}
+
+@keyframes messageIn {
+	from {
+		opacity: 0;
+		transform: translateY(12px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes panelSlide {
+	from {
+		opacity: 0;
+		transform: translateX(24px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes typingDot {
+	0%,
+	80%,
+	100% {
+		transform: scale(0.6);
+		opacity: 0.4;
+	}
+	40% {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes floatPulse {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0 rgba(107, 99, 212, 0.4);
+	}
+	50% {
+		box-shadow: 0 0 0 8px rgba(107, 99, 212, 0);
+	}
+}
+
+@keyframes orbFloat {
+	0%,
+	100% {
+		transform: translateY(0) scale(1);
+	}
+	50% {
+		transform: translateY(-20px) scale(1.05);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}

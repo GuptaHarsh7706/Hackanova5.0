@@ -1,17 +1,13 @@
 export default function MissingFieldAlert({ fields = [] }) {
-  if (!fields.length) {
-    return null
-  }
-
+  if (!fields.length) return null
   return (
-    <div className="rounded-xl border border-amber-400/40 bg-amber-300/10 p-3 text-amber-100">
-      <p className="text-sm font-semibold">Missing details</p>
-      <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
+    <div className="rounded-lg border border-amber-700/70 bg-amber-950/30 p-2 text-xs text-amber-200">
+      <p className="font-semibold">Missing</p>
+      <ul className="mt-1 list-disc pl-4">
         {fields.map((f) => (
           <li key={f}>{f}</li>
         ))}
       </ul>
-      <p className="mt-2 text-[11px] text-amber-200/80">Click chat to fill these in</p>
     </div>
   )
 }

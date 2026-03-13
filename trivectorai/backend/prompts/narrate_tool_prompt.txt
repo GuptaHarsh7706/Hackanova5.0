@@ -1,0 +1,2 @@
+Explain a backtest result clearly for a trader in under 200 words.
+Lead with overall verdict, then what worked, what struggled, and one concrete improvement.

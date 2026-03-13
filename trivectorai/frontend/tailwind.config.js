@@ -1,42 +1,46 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,jsx}"],
-  darkMode: "class",
   theme: {
     extend: {
       colors: {
         brand: {
-          50: "#eeedfe",
-          100: "#cecbf6",
-          400: "#7f77dd",
-          600: "#534ab7",
-          900: "#26215c",
+          50: "var(--brand-50)",
+          100: "var(--brand-100)",
+          200: "var(--brand-200)",
+          400: "var(--brand-400)",
+          500: "var(--brand-500)",
+          600: "var(--brand-600)",
+          700: "var(--brand-700)",
+          900: "var(--brand-900)",
         },
-        surface: {
-          DEFAULT: "#0f0f13",
-          card: "#17171e",
-          border: "#2a2a36",
+        bg: {
+          base: "var(--bg-base)",
+          surface: "var(--bg-surface)",
+          elevated: "var(--bg-elevated)",
+          overlay: "var(--bg-overlay)",
+        },
+        text: {
+          primary: "var(--text-primary)",
+          secondary: "var(--text-secondary)",
+          muted: "var(--text-muted)",
+        },
+        border: {
+          subtle: "var(--border-subtle)",
+          DEFAULT: "var(--border-default)",
+          strong: "var(--border-strong)",
         },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "Fira Code", "monospace"],
+        sans: ["Inter", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
       },
       animation: {
-        "fade-in": "fadeIn 0.2s ease-out",
-        "slide-up": "slideUp 0.25s ease-out",
-        "pulse-dot": "pulseDot 1.2s ease-in-out infinite",
-      },
-      keyframes: {
-        fadeIn: { from: { opacity: 0 }, to: { opacity: 1 } },
-        slideUp: {
-          from: { opacity: 0, transform: "translateY(8px)" },
-          to: { opacity: 1, transform: "translateY(0)" },
-        },
-        pulseDot: {
-          "0%,80%,100%": { transform: "scale(0.6)", opacity: 0.4 },
-          "40%": { transform: "scale(1)", opacity: 1 },
-        },
+        "message-in": "messageIn 250ms ease-out",
+        "panel-slide": "panelSlide 300ms ease-out",
+        "typing-dot": "typingDot 1.2s ease-in-out infinite",
+        "float-pulse": "floatPulse 1.8s ease-in-out infinite",
+        "orb-float": "orbFloat 7s ease-in-out infinite",
       },
     },
   },
