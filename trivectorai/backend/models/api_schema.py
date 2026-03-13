@@ -15,6 +15,9 @@ class ParseResponse(BaseModel):
     agent_message: str = ""
     missing_fields: list[str] = Field(default_factory=list)
     session_id: Optional[str] = None
+    can_run: bool = False
+    parse_details: dict = Field(default_factory=dict)
+    agent_trace: list[str] = Field(default_factory=list)
 
 
 class BacktestRequest(BaseModel):
@@ -25,4 +28,14 @@ class BacktestRequest(BaseModel):
 class BacktestResponse(BaseModel):
     status: Literal["ok", "error"]
     result: Optional[dict] = None
+    message: str = ""
+
+
+class CompareRequest(BaseModel):
+    ids: list[str] = Field(default_factory=list)
+
+
+class CompareResponse(BaseModel):
+    status: Literal["ok", "error"] = "ok"
+    items: list[dict] = Field(default_factory=list)
     message: str = ""

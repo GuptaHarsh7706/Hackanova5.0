@@ -39,4 +39,17 @@ def execute_clarify_tool(missing_fields: list, partial_strategy: dict) -> dict:
         understood_text = "\n\nWhat I understood so far:\n" + "\n".join(f"  ✓ {item}" for item in understood)
 
     question = f"{FIELD_QUESTIONS.get(ask_about, f'Could you clarify: {ask_about}?')}{understood_text}"
-    return {"question": question, "asking_about": ask_about}
+    examples = {
+        "ticker": ["AAPL daily", "BTCUSDT 4h", "EURUSD 1h"],
+        "entry_rules": [
+            "Buy when SMA(50) crosses above SMA(200)",
+            "Buy when RSI(14) drops below 30",
+            "Buy when MACD crosses above signal",
+        ],
+        "timeframe": ["Use daily bars", "Use 4-hour candles", "Use 15-minute candles"],
+    }
+    return {
+        "question": question,
+        "asking_about": ask_about,
+        "examples": examples.get(ask_about, []),
+    }
