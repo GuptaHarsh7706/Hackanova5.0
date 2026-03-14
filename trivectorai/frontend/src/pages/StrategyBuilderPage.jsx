@@ -1,4 +1,4 @@
-import { Bell, CircleUser, Cog, Plus } from "lucide-react"
+import { Bell, CircleUser, Cog, Plus, Send } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
@@ -8,8 +8,10 @@ import {
   fetchStrategyTemplates,
   getBacktestJobResult,
   parseStrategyBuilder,
+  requestStrategyImprovement,
   runBuilderBacktest,
   saveBuilderStrategy,
+  sendChatMessage,
   startBuilderAgenticBacktest,
   resolveApiUrl,
   suggestStrategyImprovements,
@@ -26,6 +28,24 @@ const DEFAULT_TEMPLATES = [
   { name: "Momentum", description: "Trend-following momentum strategy", natural_language: "Buy NVDA when EMA 20 crosses above EMA 50 and MACD crosses above signal. Exit on MACD cross below signal." },
   { name: "Grid Trading", description: "Range-bound grid order placement", natural_language: "Trade ETHUSDT on 1h with mean reversion entries and fixed stop loss/take profit per grid level." },
 ]
+
+const DEFAULT_SUGGESTIONS = [
+  "Add stop loss",
+  "Include volume filter",
+  "Set RSI threshold",
+  "Add moving average",
+  "Define risk/reward ratio",
+]
+
+const DEFAULT_CHAT_MESSAGES = [
+  {
+    role: "agent",
+    content: "Hello! I'm TriVectorAI — your AI trading assistant.\n\nDescribe a strategy in plain English and I'll parse it, validate it, and help you backtest it. You can also ask me about any trading indicator or concept.\n\nTry: \"Buy AAPL when the 50-day MA crosses above the 200-day MA and RSI is below 30.\"",
+    type: "greeting",
+  },
+]
+
+const BUILDER_STATE_STORAGE_KEY = "trivectorai.strategy_lab.state.v1"
 
 export default function StrategyBuilderPage() {
   const navigate = useNavigate()
@@ -59,13 +79,7 @@ export default function StrategyBuilderPage() {
     "Trend Indicators": ["MA", "EMA", "SMA", "MACD", "ADX"],
     "Momentum Indicators": ["RSI", "Stochastic", "CCI", "ROC"],
   })
-  const [suggestions, setSuggestions] = useState([
-    "Add stop loss",
-    "Include volume filter",
-    "Set RSI threshold",
-    "Add moving average",
-    "Define risk/reward ratio",
-  ])
+  const [suggestions, setSuggestions] = useState(DEFAULT_SUGGESTIONS)
 
   const [draft, setDraft] = useState(seedDraft)
   const [backtestProgress, setBacktestProgress] = useState(0)
@@ -77,6 +91,19 @@ export default function StrategyBuilderPage() {
   const lastAutoParsed = useRef("")
   const streamRef = useRef(null)
   const consoleEndRef = useRef(null)
+
+  // ── Chat state ──────────────────────────────────────────────────────────────
+  const [chatMessages, setChatMessages] = useState(DEFAULT_CHAT_MESSAGES)
+  const [chatInput, setChatInput] = useState("")
+  const [chatLoading, setChatLoading] = useState(false)
+  const [improveLoading, setImproveLoading] = useState(false)
+  const [lastBacktestMetrics, setLastBacktestMetrics] = useState(null)
+  const [stateHydrated, setStateHydrated] = useState(false)
+  const chatEndRef = useRef(null)
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+  }, [chatMessages])
 
   const pushConsole = (agent, message) => {
     setConsoleLines((prev) => {
@@ -98,6 +125,83 @@ export default function StrategyBuilderPage() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(BUILDER_STATE_STORAGE_KEY)
+      if (!raw) {
+        setStateHydrated(true)
+        return
+      }
+
+      const saved = JSON.parse(raw)
+      if (typeof saved?.sessionId === "string") setSessionId(saved.sessionId)
+      if (saved?.currentStrategy && typeof saved.currentStrategy === "object") setCurrentStrategy(saved.currentStrategy)
+      if (typeof saved?.parseCanRun === "boolean") setParseCanRun(saved.parseCanRun)
+      if (saved?.parseDetails && typeof saved.parseDetails === "object") setParseDetails(saved.parseDetails)
+      if (typeof saved?.parseStatus === "string") setParseStatus(saved.parseStatus)
+      if (Array.isArray(saved?.suggestions) && saved.suggestions.length) setSuggestions(saved.suggestions)
+      if (typeof saved?.draft === "string") setDraft(saved.draft)
+      if (typeof saved?.backtestProgress === "number") setBacktestProgress(saved.backtestProgress)
+      if (typeof saved?.backtestStepMessage === "string") setBacktestStepMessage(saved.backtestStepMessage)
+      if (Array.isArray(saved?.consoleLines) && saved.consoleLines.length) setConsoleLines(saved.consoleLines)
+      if (Array.isArray(saved?.chatMessages) && saved.chatMessages.length) setChatMessages(saved.chatMessages)
+      if (typeof saved?.chatInput === "string") setChatInput(saved.chatInput)
+      if (saved?.lastBacktestMetrics && typeof saved.lastBacktestMetrics === "object") {
+        setLastBacktestMetrics(saved.lastBacktestMetrics)
+      }
+
+      lastAutoParsed.current = typeof saved?.lastAutoParsed === "string"
+        ? saved.lastAutoParsed
+        : (typeof saved?.draft === "string" ? saved.draft.trim() : "")
+    } catch {
+      // Ignore malformed persisted state and continue with defaults.
+    } finally {
+      setStateHydrated(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!stateHydrated) return
+
+    const snapshot = {
+      sessionId,
+      currentStrategy,
+      parseCanRun,
+      parseDetails,
+      parseStatus,
+      suggestions,
+      draft,
+      backtestProgress,
+      backtestStepMessage,
+      consoleLines,
+      chatMessages,
+      chatInput,
+      lastBacktestMetrics,
+      lastAutoParsed: lastAutoParsed.current,
+    }
+
+    try {
+      sessionStorage.setItem(BUILDER_STATE_STORAGE_KEY, JSON.stringify(snapshot))
+    } catch {
+      // If browser storage is unavailable/full, continue without persistence.
+    }
+  }, [
+    stateHydrated,
+    sessionId,
+    currentStrategy,
+    parseCanRun,
+    parseDetails,
+    parseStatus,
+    suggestions,
+    draft,
+    backtestProgress,
+    backtestStepMessage,
+    consoleLines,
+    chatMessages,
+    chatInput,
+    lastBacktestMetrics,
+  ])
 
   const parseDraft = async (text) => {
     const trimmed = text?.trim()
@@ -144,6 +248,19 @@ export default function StrategyBuilderPage() {
       if (Array.isArray(response.suggestions) && response.suggestions.length) {
         setSuggestions(response.suggestions)
       }
+
+      // ── Feed agent reply into chat ──────────────────────────────────────
+      if (response?.agent_message) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            role: "agent",
+            content: response.agent_message,
+            type: response.status === "needs_clarification" ? "clarification" : "strategy",
+          },
+        ])
+      }
+
       return response
     } catch (err) {
       pushConsole("ParserAgent", `Parsing failed: ${err.message || "request error"}`)
@@ -187,6 +304,8 @@ export default function StrategyBuilderPage() {
   }, [addToast])
 
   useEffect(() => {
+    if (!stateHydrated) return
+
     const trimmed = draft.trim()
     if (!trimmed || trimmed.length < 24) return
     if (trimmed === lastAutoParsed.current) return
@@ -196,7 +315,153 @@ export default function StrategyBuilderPage() {
       if (res) lastAutoParsed.current = trimmed
     }, 700)
     return () => clearTimeout(id)
-  }, [draft, sessionId])
+  }, [draft, sessionId, stateHydrated])
+
+  // ── Chat: send a message (general conversation or strategy follow-up) ────────
+  const onSendChat = async () => {
+    const text = chatInput.trim()
+    if (!text || chatLoading) return
+
+    setChatMessages((prev) => [...prev, { role: "user", content: text, type: "user" }])
+    setChatInput("")
+    setChatLoading(true)
+
+    try {
+      const response = await sendChatMessage({ text, session_id: sessionId || undefined })
+
+      // If the backend parsed a strategy, sync it to local state
+      if (response?.strategy && Object.keys(response.strategy).length > 0) {
+        setCurrentStrategy(response.strategy)
+        setSessionId(response.session_id || sessionId)
+        setParseCanRun(!!response.can_run)
+        setParseDetails(response.parse_details || {})
+      }
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: response?.agent_message || "Got it! Let me know if you have more details.",
+          type: response?.status === "needs_clarification" ? "clarification" : "chat",
+        },
+      ])
+    } catch (err) {
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "agent", content: `Sorry, I ran into an error: ${err.message}`, type: "error" },
+      ])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  const onChatKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      onSendChat()
+    }
+  }
+
+  const onOpenLatestResults = (resultId) => {
+    if (!resultId) return
+    navigate(`/app/results/${resultId}`)
+  }
+
+  const handleBacktestSuccess = (result, resultId, successMessage = "Backtest completed") => {
+    useStrategyStore.setState({
+      backtestResult: result,
+      currentResultId: resultId,
+    })
+
+    const metrics = result?.metrics || {}
+    setLastBacktestMetrics(metrics)
+    setBacktestProgress(100)
+    setBacktestStepMessage("Backtest completed")
+    pushConsole("PersistenceAgent", `Backtest result ready: ${resultId}`)
+    pushConsole("NarrativeAgent", "AI report and analytics generated")
+    addToast("success", successMessage)
+
+    const wr = metrics.win_rate_pct != null ? `${metrics.win_rate_pct}%` : "N/A"
+    const tr = metrics.total_return_pct != null ? `${metrics.total_return_pct}%` : "N/A"
+    const sh = metrics.sharpe_ratio != null ? metrics.sharpe_ratio : "N/A"
+
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        role: "agent",
+        content: `Backtest complete! Return: ${tr} | Win Rate: ${wr} | Sharpe: ${sh}\n\nWould you like me to analyse these results and suggest an improved strategy?`,
+        type: "backtest_done",
+        resultId,
+      },
+    ])
+  }
+
+  // ── Improve: request AI strategy improvement after backtest ─────────────────
+  const onRequestImprovement = async () => {
+    if (!currentStrategy || !lastBacktestMetrics) return
+    setImproveLoading(true)
+    setChatMessages((prev) => [
+      ...prev,
+      { role: "agent", content: "Analysing your backtest results and generating an improved strategy...", type: "thinking" },
+    ])
+
+    try {
+      const result = await requestStrategyImprovement({
+        strategy: currentStrategy,
+        backtest_metrics: lastBacktestMetrics,
+        session_id: sessionId || undefined,
+      })
+
+      setChatMessages((prev) => [
+        ...prev.filter((m) => m.type !== "thinking"),
+        {
+          role: "agent",
+          content: result.summary,
+          type: "improvement",
+          improvedStrategy: result.improved_strategy,
+          naturalLanguage: result.natural_language,
+          issues: result.issues || [],
+          generalTips: result.general_tips || [],
+        },
+      ])
+    } catch (err) {
+      setChatMessages((prev) => [
+        ...prev.filter((m) => m.type !== "thinking"),
+        { role: "agent", content: `Improvement analysis failed: ${err.message}`, type: "error" },
+      ])
+    } finally {
+      setImproveLoading(false)
+    }
+  }
+
+  // Apply an improved strategy to the textarea and re-parse
+  const applyImprovedStrategy = async (nl, strategyDict) => {
+    const nextDraft = (nl || "").trim()
+    if (nextDraft) {
+      setDraft(nextDraft)
+      lastAutoParsed.current = ""
+    }
+    if (strategyDict) {
+      setCurrentStrategy(strategyDict)
+      setParseCanRun(false)
+    }
+
+    if (nextDraft) {
+      const parsed = await parseDraft(nextDraft)
+      if (parsed) {
+        lastAutoParsed.current = nextDraft
+      }
+    }
+
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        role: "agent",
+        content: "Improved strategy applied to the editor and re-parsed. Review it above, then run the backtest to compare results.",
+        type: "chat",
+      },
+    ])
+  }
 
   const detectedIndicators = useMemo(() => {
     if (!currentStrategy?.entry_rules?.length) return ["50-day Moving Average", "200-day Moving Average", "RSI(14)", "MACD (12, 26, 9)"]
@@ -323,17 +588,7 @@ export default function StrategyBuilderPage() {
               throw new Error("Backtest completed but result payload is missing")
             }
 
-            useStrategyStore.setState({
-              backtestResult: result,
-              currentResultId: resultId,
-            })
-
-            setBacktestProgress(100)
-            setBacktestStepMessage("Backtest completed")
-            pushConsole("PersistenceAgent", `Backtest result ready: ${resultId}`)
-            pushConsole("NarrativeAgent", "AI report and analytics generated")
-            addToast("success", "Backtest completed")
-            navigate(`/app/results/${resultId}`)
+            handleBacktestSuccess(result, resultId)
             resolve()
           } catch (error) {
             reject(error)
@@ -359,11 +614,12 @@ export default function StrategyBuilderPage() {
       pushConsole("ExecutionAgent", `Agentic run failed: ${err.message || "unknown"}`)
       try {
         const fallback = await runBuilderBacktest(currentStrategy)
-        const fallbackId = fallback?.result?.id
-        if (fallbackId) {
+        const fallbackResult = fallback?.result
+        const fallbackId = fallbackResult?.id
+        if (fallbackId && fallbackResult) {
           pushConsole("ExecutionAgent", `Fallback synchronous backtest succeeded: ${fallbackId}`)
+          handleBacktestSuccess(fallbackResult, fallbackId, "Backtest completed in fallback mode")
           addToast("warn", "Live stream unavailable, used fallback backtest mode")
-          navigate(`/app/results/${fallbackId}`)
           return
         }
       } catch {
@@ -394,19 +650,29 @@ export default function StrategyBuilderPage() {
 
   const onClearStrategy = async () => {
     setDraft("")
+    setSessionId("")
     setCurrentStrategy(null)
     setParseCanRun(false)
     setParseDetails({})
     setParseStatus("draft")
-    setSuggestions([
-      "Add stop loss",
-      "Include volume filter",
-      "Set RSI threshold",
-      "Add moving average",
-      "Define risk/reward ratio",
-    ])
+    setSuggestions(DEFAULT_SUGGESTIONS)
     lastAutoParsed.current = ""
+    setLastBacktestMetrics(null)
+    setChatInput("")
+    setChatMessages([
+      {
+        role: "agent",
+        content: "Session cleared. Describe a new strategy or ask me anything!",
+        type: "greeting",
+      },
+    ])
     pushConsole("System", "Strategy draft and parser state cleared")
+
+    try {
+      sessionStorage.removeItem(BUILDER_STATE_STORAGE_KEY)
+    } catch {
+      // Ignore storage cleanup errors.
+    }
 
     if (sessionId) {
       try {
@@ -566,6 +832,153 @@ export default function StrategyBuilderPage() {
                 ))}
                 <div ref={consoleEndRef} />
               </div>
+            </div>
+          </section>
+
+          {/* ── Conversational AI Chat Panel ───────────────────────────────── */}
+          <section className="lab-panel" style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+            <div className="mb-2 flex items-center justify-between border-b border-[var(--border-default)] pb-2">
+              <p className="lab-title">AI Strategy Assistant</p>
+              <span className="text-[10px] text-[var(--text-muted)]">
+                {chatLoading ? "Thinking..." : improveLoading ? "Analysing..." : "Online"}
+              </span>
+            </div>
+
+            {/* Message thread */}
+            <div
+              className="flex flex-col gap-2 overflow-auto rounded-sm bg-black/30 p-2"
+              style={{ maxHeight: "320px", minHeight: "120px" }}
+            >
+              {chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    style={{
+                      maxWidth: "88%",
+                      padding: "8px 10px",
+                      borderRadius: "6px",
+                      fontSize: "11px",
+                      lineHeight: "1.55",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      background:
+                        msg.role === "user"
+                          ? "rgba(0,255,102,0.12)"
+                          : msg.type === "clarification"
+                          ? "rgba(255,200,0,0.08)"
+                          : msg.type === "error"
+                          ? "rgba(255,60,60,0.10)"
+                          : msg.type === "improvement"
+                          ? "rgba(0,180,255,0.08)"
+                          : "rgba(255,255,255,0.04)",
+                      border:
+                        msg.type === "clarification"
+                          ? "1px solid rgba(255,200,0,0.25)"
+                          : msg.type === "improvement"
+                          ? "1px solid rgba(0,180,255,0.25)"
+                          : msg.type === "error"
+                          ? "1px solid rgba(255,60,60,0.25)"
+                          : "1px solid rgba(255,255,255,0.06)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {msg.role === "agent" && (
+                      <p style={{ fontSize: "9px", color: "var(--brand-200)", marginBottom: "4px", fontWeight: 600 }}>
+                        {msg.type === "clarification" ? "⚡ FOLLOW-UP" : msg.type === "improvement" ? "✦ STRATEGY IMPROVEMENT" : msg.type === "backtest_done" ? "✔ BACKTEST RESULT" : "◆ TriVectorAI"}
+                      </p>
+                    )}
+                    <span>{msg.content}</span>
+
+                    {/* Improvement card */}
+                    {msg.type === "improvement" && msg.improvedStrategy && (
+                      <div style={{ marginTop: "10px", borderTop: "1px solid rgba(0,180,255,0.2)", paddingTop: "8px" }}>
+                        {msg.issues?.slice(0, 3).map((issue, i) => (
+                          <p key={i} style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "3px" }}>
+                            • {issue.suggestion}
+                          </p>
+                        ))}
+                        {msg.generalTips?.map((tip, i) => (
+                          <p key={`tip-${i}`} style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "3px" }}>
+                            💡 {tip}
+                          </p>
+                        ))}
+                        <div style={{ marginTop: "8px", background: "rgba(0,180,255,0.06)", borderRadius: "4px", padding: "6px 8px" }}>
+                          <p style={{ fontSize: "10px", color: "var(--brand-200)", marginBottom: "4px", fontWeight: 600 }}>Improved Strategy</p>
+                          <p style={{ fontSize: "10px", color: "var(--text-secondary)", fontStyle: "italic" }}>{msg.naturalLanguage}</p>
+                        </div>
+                        <button
+                          className="btn-green"
+                          style={{ marginTop: "8px", fontSize: "10px", padding: "4px 10px" }}
+                          onClick={() => applyImprovedStrategy(msg.naturalLanguage, msg.improvedStrategy)}
+                        >
+                          Apply Improved Strategy
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Backtest done — show Improve button */}
+                    {msg.type === "backtest_done" && lastBacktestMetrics && (
+                      <div style={{ display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap" }}>
+                        <button
+                          className="btn-yellow"
+                          style={{ fontSize: "10px", padding: "4px 10px" }}
+                          onClick={onRequestImprovement}
+                          disabled={improveLoading}
+                        >
+                          {improveLoading ? "Analysing..." : "Analyse & Improve Strategy"}
+                        </button>
+                        <button
+                          className="btn-ghost"
+                          style={{ fontSize: "10px", padding: "4px 10px" }}
+                          onClick={() => onOpenLatestResults(msg.resultId)}
+                        >
+                          View Full Results
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {(chatLoading || improveLoading) && (
+                <div className="flex justify-start">
+                  <div style={{ padding: "8px 10px", borderRadius: "6px", fontSize: "11px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "var(--text-muted)" }}>● ● ●</span>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Chat input */}
+            <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={onChatKeyDown}
+                placeholder="Ask a question or respond to follow-up..."
+                disabled={chatLoading || improveLoading}
+                style={{
+                  flex: 1,
+                  background: "rgba(0,0,0,0.4)",
+                  border: "1px solid var(--border-default)",
+                  borderRadius: "4px",
+                  padding: "6px 8px",
+                  fontSize: "11px",
+                  color: "var(--text-primary)",
+                  outline: "none",
+                }}
+              />
+              <button
+                className="btn-green"
+                style={{ padding: "6px 10px", display: "flex", alignItems: "center", gap: "4px" }}
+                onClick={onSendChat}
+                disabled={!chatInput.trim() || chatLoading || improveLoading}
+              >
+                <Send className="h-3 w-3" />
+              </button>
             </div>
           </section>
         </main>

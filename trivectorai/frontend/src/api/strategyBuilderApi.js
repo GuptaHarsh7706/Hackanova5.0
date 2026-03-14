@@ -125,3 +125,21 @@ export const resolveApiUrl = (path = "") => {
   if (path.startsWith("/")) return `${origin}${path}`
   return `${origin}/${path}`
 }
+
+export const sendChatMessage = async ({ text, session_id }) => {
+  try {
+    const { data } = await api.post("/chat", { text, session_id })
+    return data
+  } catch (error) {
+    throw new Error(toError(error))
+  }
+}
+
+export const requestStrategyImprovement = async ({ strategy, backtest_metrics, session_id }) => {
+  try {
+    const { data } = await api.post("/improve", { strategy, backtest_metrics, session_id })
+    return data
+  } catch (error) {
+    throw new Error(toError(error))
+  }
+}

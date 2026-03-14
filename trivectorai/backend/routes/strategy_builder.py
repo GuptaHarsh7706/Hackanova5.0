@@ -16,7 +16,11 @@ from database.repository import (
     save_strategy,
 )
 from models.strategy_builder_schema import (
+    ChatRequest,
+    ChatResponse,
     ClearStrategyResponse,
+    ImproveStrategyRequest,
+    ImproveStrategyResponse,
     ParseStrategyBuilderRequest,
     SaveStrategyRequest,
     SaveStrategyResponse,
@@ -180,3 +184,60 @@ async def run_backtest_from_builder_agentic(payload: dict):
         "status_url": f"/api/backtests/{job.id}",
         "result_url": f"/api/backtests/{job.id}/result",
     }
+
+
+# ---------------------------------------------------------------------------
+# Conversational chat endpoint
+# ---------------------------------------------------------------------------
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_with_agent(req: ChatRequest):
+    """
+    General-purpose chat endpoint.
+    Routes to parse flow for strategy-like messages, or to handle_chat for
+    conversational/general questions — both within the same session.
+    """
+    from agent.strategy_agent import _is_general_conversation, handle_chat
+
+    memory = AgentMemory.from_dict(load_memory(req.session_id) if req.session_id else {})
+
+    if _is_general_conversation(req.text):
+        response = handle_chat(req.text, memory)
+    else:
+        response = run_agent(req.text, memory)
+
+    save_memory(memory.session_id, memory.to_dict())
+
+    return ChatResponse(
+        session_id=response.session_id,
+        agent_message=response.agent_message or "",
+        status=response.status or "ok",
+        strategy=response.strategy,
+        can_run=bool(response.can_run),
+        parse_details=response.parse_details or {},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Strategy improvement endpoint
+# ---------------------------------------------------------------------------
+
+@router.post("/improve", response_model=ImproveStrategyResponse)
+async def improve_strategy_endpoint(req: ImproveStrategyRequest):
+    """
+    Analyse a completed backtest result and return an AI-generated improved strategy.
+    """
+    from agent.strategy_agent import improve_strategy as _improve
+
+    result = _improve(req.strategy, req.backtest_metrics)
+    if not result.get("success"):
+        raise HTTPException(status_code=422, detail=result.get("error", "Improvement analysis failed"))
+
+    return ImproveStrategyResponse(
+        success=True,
+        improved_strategy=result["improved_strategy"],
+        natural_language=result["natural_language"],
+        issues=result["issues"],
+        general_tips=result["general_tips"],
+        summary=result["summary"],
+    )

@@ -13,6 +13,7 @@ from .memory import AgentMemory
 from .tool_registry import TOOL_DEFINITIONS
 from .tools.backtest_tool import execute_backtest_tool
 from .tools.clarify_tool import execute_clarify_tool
+from .tools.improve_tool import execute_improve_tool
 from .tools.narrate_tool import execute_narrate_tool
 from .tools.parse_tool import execute_parse_tool
 from .tools.validate_tool import execute_validate_tool
@@ -387,3 +388,203 @@ def run_agent(user_message: str, memory: AgentMemory) -> ParseResponse:
         return _deterministic_parse_flow(user_message, memory)
 
     return _deterministic_parse_flow(user_message, memory)
+
+
+# ---------------------------------------------------------------------------
+# Conversational chat helpers
+# ---------------------------------------------------------------------------
+
+_STRATEGY_KEYWORDS = {
+    "buy", "sell", "rsi", "macd", "sma", "ema", "ma", "moving average",
+    "crossover", "cross above", "cross below", "bollinger", "band",
+    "breakout", "momentum", "entry", "exit", "stop loss", "take profit",
+    "backtest", "ticker", "timeframe", "strategy", "trade", "position",
+    "oversold", "overbought", "golden cross", "death cross", "signal",
+}
+
+_CONVERSATIONAL_KEYWORDS = {
+    "hello", "hi", "hey", "thanks", "thank you", "what can you",
+    "how do you", "what is", "explain", "tell me about", "what are",
+    "help me understand", "who are you", "what do you do",
+    "good morning", "good evening", "good afternoon",
+}
+
+_INDICATOR_QA: dict[str, str] = {
+    "rsi": (
+        "RSI (Relative Strength Index) is a momentum oscillator from 0–100.\n"
+        "• RSI > 70 → overbought (potential sell)\n"
+        "• RSI < 30 → oversold (potential buy)\n"
+        "Example: 'Buy when RSI(14) drops below 30, sell when it rises above 70.'"
+    ),
+    "macd": (
+        "MACD compares a 12-period and 26-period EMA to track trend momentum.\n"
+        "• MACD crosses above signal line → bullish\n"
+        "• MACD crosses below signal line → bearish\n"
+        "Example: 'Buy when MACD crosses above the signal line.'"
+    ),
+    "bollinger": (
+        "Bollinger Bands are volatility channels around a moving average.\n"
+        "• Upper band = MA + 2σ  |  Lower band = MA − 2σ\n"
+        "Use for mean-reversion: buy near lower band, sell near upper band."
+    ),
+    "moving average": (
+        "Moving averages smooth price data to reveal trends:\n"
+        "• SMA (Simple) – equal weight over N periods\n"
+        "• EMA (Exponential) – more weight on recent prices, faster reaction\n"
+        "Famous pattern: Golden Cross (50-MA crosses above 200-MA → bullish)."
+    ),
+}
+
+_FALLBACK_GREETING = (
+    "Hello! I'm TriVectorAI — your AI-powered trading strategy assistant.\n"
+    "You can:\n"
+    "• Describe a strategy in plain English (e.g. 'Buy AAPL when RSI < 30')\n"
+    "• Ask me follow-up questions or respond to my clarifications\n"
+    "• Request analysis and improvements after a backtest\n\n"
+    "What would you like to build today?"
+)
+
+_IDENTITY_RESPONSE = (
+    "I'm TriVectorAI — a multi-agent quantitative trading assistant. Here's what I can do:\n"
+    "• Parse natural-language strategies into executable rules\n"
+    "• Validate strategies for completeness and risk issues\n"
+    "• Run multi-step agentic backtests on historical data\n"
+    "• Analyse results and suggest data-driven improvements\n"
+    "• Answer questions about indicators, strategies, and market concepts"
+)
+
+
+def _is_general_conversation(message: str) -> bool:
+    """Return True when the message looks like general chat rather than a strategy."""
+    msg = message.lower().strip()
+    has_conv = any(kw in msg for kw in _CONVERSATIONAL_KEYWORDS)
+    has_strat = any(kw in msg for kw in _STRATEGY_KEYWORDS)
+    if has_conv and not has_strat:
+        return True
+    if len(msg.split()) <= 6 and not has_strat:
+        return True
+    return False
+
+
+def _rule_based_chat_response(message: str) -> str:
+    msg = message.lower()
+    if any(t in msg for t in ("who are you", "what do you do", "what can you")):
+        return _IDENTITY_RESPONSE
+    for keyword, answer in _INDICATOR_QA.items():
+        if keyword in msg:
+            return answer
+    if any(t in msg for t in ("hello", "hi", "hey", "good morning", "good evening", "good afternoon")):
+        return _FALLBACK_GREETING
+    if any(t in msg for t in ("thank", "thanks")):
+        return "You're welcome! Let me know if you'd like to build or improve a strategy."
+    return (
+        "I'm here to help you build and backtest trading strategies! "
+        "Try: 'Buy SPY when the 50-day MA crosses above the 200-day MA and RSI < 35. "
+        "Sell when RSI > 70.' — or ask me about any trading indicator."
+    )
+
+
+def handle_chat(user_message: str, memory: AgentMemory) -> ParseResponse:
+    """
+    Handle a conversational message that is *not* a strategy description.
+    Preserves session continuity but does not alter the current strategy state.
+    """
+    memory.add_user_message(user_message)
+    trace = ["Received message", "Classified: general conversation"]
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if api_key:
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                system_instruction=(
+                    "You are TriVectorAI, a friendly and knowledgeable quantitative trading assistant. "
+                    "Answer trading questions clearly and concisely (under 180 words). "
+                    "When the user seems ready to describe a strategy, encourage them. "
+                    "Do NOT fabricate market data or prices."
+                ),
+                generation_config=genai.GenerationConfig(temperature=0.4),
+            )
+            chat = model.start_chat(history=memory.get_gemini_history()[:-1])
+            response = chat.send_message(user_message)
+            text = response.candidates[0].content.parts[0].text
+            memory.add_agent_message(text)
+            trace.append("Gemini conversational response generated")
+            return ParseResponse(
+                status="ok",
+                strategy=memory.current_strategy,
+                agent_message=text,
+                session_id=memory.session_id,
+                can_run=bool(memory.current_strategy),
+                parse_details={},
+                agent_trace=trace,
+            )
+        except Exception:
+            trace.append("Gemini failed; falling back to rule-based response")
+
+    text = _rule_based_chat_response(user_message)
+    memory.add_agent_message(text)
+    trace.append("Rule-based response generated")
+    return ParseResponse(
+        status="ok",
+        strategy=memory.current_strategy,
+        agent_message=text,
+        session_id=memory.session_id,
+        can_run=bool(memory.current_strategy),
+        parse_details={},
+        agent_trace=trace,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Strategy improvement
+# ---------------------------------------------------------------------------
+
+def improve_strategy(strategy: dict, backtest_metrics: dict) -> dict:
+    """
+    Try Gemini-powered improvement first; fall back to rule-based execute_improve_tool.
+    Always returns the shape produced by execute_improve_tool.
+    """
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if api_key:
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                generation_config=genai.GenerationConfig(temperature=0.2),
+            )
+            prompt = (
+                "You are an expert quantitative analyst. Analyse this backtest result and "
+                "suggest a concise, actionable improved strategy.\n\n"
+                f"Original Strategy:\n{json.dumps(strategy, indent=2)}\n\n"
+                "Backtest Metrics:\n"
+                f"  Total Return: {backtest_metrics.get('total_return_pct', 'N/A')}%\n"
+                f"  Win Rate: {backtest_metrics.get('win_rate_pct', 'N/A')}%\n"
+                f"  Sharpe Ratio: {backtest_metrics.get('sharpe_ratio', 'N/A')}\n"
+                f"  Max Drawdown: {backtest_metrics.get('max_drawdown_pct', 'N/A')}%\n"
+                f"  Total Trades: {backtest_metrics.get('total_trades', 'N/A')}\n\n"
+                "Respond ONLY with a JSON object:\n"
+                '{"summary":"...","issues":[{"id":"...","suggestion":"..."}],'
+                '"general_tips":["...","..."],"natural_language":"improved strategy in plain English"}'
+            )
+            response = model.generate_content(prompt)
+            raw = response.candidates[0].content.parts[0].text.strip()
+            if "```json" in raw:
+                raw = raw.split("```json")[1].split("```")[0].strip()
+            elif "```" in raw:
+                raw = raw.split("```")[1].split("```")[0].strip()
+            gemini_data = json.loads(raw)
+
+            base = execute_improve_tool(strategy, backtest_metrics)
+            base["summary"] = gemini_data.get("summary", base["summary"])
+            base["issues"] = gemini_data.get("issues", base["issues"])
+            base["general_tips"] = gemini_data.get("general_tips", base["general_tips"])
+            if gemini_data.get("natural_language"):
+                base["natural_language"] = gemini_data["natural_language"]
+            return base
+        except Exception:
+            pass  # Fall through to rule-based
+
+    return execute_improve_tool(strategy, backtest_metrics)
+

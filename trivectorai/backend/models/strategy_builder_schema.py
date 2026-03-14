@@ -65,3 +65,40 @@ class ClearStrategyResponse(BaseModel):
     status: Literal["ok"] = "ok"
     session_id: str | None = None
     message: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Conversational chat
+# ---------------------------------------------------------------------------
+
+class ChatRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    session_id: str | None = None
+
+
+class ChatResponse(BaseModel):
+    session_id: str | None = None
+    agent_message: str = ""
+    status: str = "ok"
+    strategy: dict[str, Any] | None = None
+    can_run: bool = False
+    parse_details: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Strategy improvement
+# ---------------------------------------------------------------------------
+
+class ImproveStrategyRequest(BaseModel):
+    strategy: dict[str, Any]
+    backtest_metrics: dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
+
+
+class ImproveStrategyResponse(BaseModel):
+    success: bool = True
+    improved_strategy: dict[str, Any] = Field(default_factory=dict)
+    natural_language: str = ""
+    issues: list[dict[str, Any]] = Field(default_factory=list)
+    general_tips: list[str] = Field(default_factory=list)
+    summary: str = ""
