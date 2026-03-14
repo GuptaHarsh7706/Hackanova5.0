@@ -12,6 +12,7 @@ from routes.backtest import router as backtest_router
 from routes.dashboard import router as dashboard_router
 from routes.health import router as health_router
 from routes.history import router as history_router
+from routes.sandbox import router as sandbox_router
 from routes.strategy import router as strategy_router
 from routes.strategy_builder import router as strategy_builder_router
 
@@ -64,6 +65,7 @@ app.include_router(backtest_config_router)
 app.include_router(history_router)
 app.include_router(health_router)
 app.include_router(dashboard_router)
+app.include_router(sandbox_router)
 
 log.info("🚀  TriVectorAI v0.3.0 — docs at http://localhost:8000/docs")
 

@@ -1,7 +1,8 @@
 import { Bell, CircleUser, Play, Save } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 
+import { getSandboxVersions, restoreSandboxVersion, runSandboxSimulation, saveSandboxVersion } from "../api/sandboxApi"
 import EmptyState from "../components/ui/EmptyState"
 import { useStrategyStore } from "../store/useStrategyStore"
 
@@ -55,9 +56,6 @@ export default function SandboxPlaygroundPage() {
   const {
     currentStrategy,
     updateCurrentStrategy,
-    runBacktest,
-    backtestResult,
-    backtestLoading,
     addToast,
   } = useStrategyStore()
 
@@ -65,6 +63,25 @@ export default function SandboxPlaygroundPage() {
   const [oversold, setOversold] = useState(30)
   const [overbought, setOverbought] = useState(70)
   const [positionSize, setPositionSize] = useState(100)
+  const [sandboxResult, setSandboxResult] = useState(null)
+  const [workflowSteps, setWorkflowSteps] = useState([])
+  const [runningSimulation, setRunningSimulation] = useState(false)
+  const [savingVersion, setSavingVersion] = useState(false)
+  const [versions, setVersions] = useState([])
+  const [selectedVersionId, setSelectedVersionId] = useState("")
+
+  const loadVersions = async () => {
+    try {
+      const response = await getSandboxVersions(20)
+      const items = response?.versions || []
+      setVersions(items)
+      if (!selectedVersionId && items[0]?.id) {
+        setSelectedVersionId(items[0].id)
+      }
+    } catch (err) {
+      addToast("error", `Could not load sandbox versions: ${err.message}`)
+    }
+  }
 
   useEffect(() => {
     if (!currentStrategy?.ticker) {
@@ -80,6 +97,10 @@ export default function SandboxPlaygroundPage() {
     if (exitVal != null) setOverbought(Number(exitVal))
     if (currentStrategy.position_size != null) setPositionSize(Math.round(Number(currentStrategy.position_size) * 100))
   }, [currentStrategy?.ticker])
+
+  useEffect(() => {
+    loadVersions()
+  }, [])
 
   useEffect(() => {
     if (!currentStrategy?.ticker) return
@@ -104,19 +125,71 @@ export default function SandboxPlaygroundPage() {
     })
   }, [rsiPeriod, oversold, overbought, positionSize])
 
-  const onSaveVersion = () => {
-    addToast("success", "Sandbox version saved")
+  const onSaveVersion = async () => {
+    if (!strategy) return
+    setSavingVersion(true)
+    try {
+      const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      const response = await saveSandboxVersion({
+        strategy,
+        resultId: sandboxResult?.id || null,
+        label: `${strategy.ticker || "Strategy"} ${stamp}`,
+      })
+      const saved = response?.version
+      if (saved?.id) {
+        setSelectedVersionId(saved.id)
+        addToast("success", "Sandbox version saved")
+        await loadVersions()
+      } else {
+        addToast("error", "Sandbox version save failed")
+      }
+    } catch (err) {
+      addToast("error", `Sandbox version save failed: ${err.message}`)
+    } finally {
+      setSavingVersion(false)
+    }
   }
 
   const onRunSimulation = async () => {
-    await runBacktest()
-    addToast("success", "Simulation complete")
+    if (!strategy) return
+    setRunningSimulation(true)
+    try {
+      const response = await runSandboxSimulation(strategy, strategy.name || "")
+      setSandboxResult(response?.result || null)
+      setWorkflowSteps(response?.workflow || [])
+      addToast("success", "Simulation complete")
+    } catch (err) {
+      addToast("error", `Simulation failed: ${err.message}`)
+    } finally {
+      setRunningSimulation(false)
+    }
+  }
+
+  const onRestoreVersion = async () => {
+    if (!selectedVersionId) {
+      addToast("warning", "Select a version to restore")
+      return
+    }
+    try {
+      const response = await restoreSandboxVersion(selectedVersionId)
+      const restoredStrategy = response?.version?.strategy
+      const restoredResultId = response?.version?.result_id
+      if (restoredStrategy) {
+        updateCurrentStrategy(restoredStrategy)
+        if (restoredResultId) {
+          setSandboxResult((prev) => ({ ...(prev || {}), id: restoredResultId }))
+        }
+        addToast("success", "Sandbox version restored")
+      }
+    } catch (err) {
+      addToast("error", `Restore failed: ${err.message}`)
+    }
   }
 
   const strategy = currentStrategy || seedStrategy
-  const metrics = backtestResult?.metrics || {}
-  const trades = backtestResult?.trades || []
-  const chartValues = (backtestResult?.equity_curve || []).slice(-60).map((p) => Number(p.value || 0))
+  const metrics = sandboxResult?.metrics || {}
+  const trades = sandboxResult?.trades || []
+  const chartValues = (sandboxResult?.equity_curve || []).slice(-60).map((p) => Number(p.value || 0))
   const linePath = pathFromValues(chartValues, 100, 26)
 
   const codePreview = useMemo(() => {
@@ -145,8 +218,8 @@ export default function SandboxPlaygroundPage() {
         <div className="sbx-tools">
           <button>{strategy.name || "RSI Mean Reversion v2.1"}</button>
           <button>{(strategy.timeframe || "1d").toUpperCase()}</button>
-          <button onClick={onSaveVersion}><Save className="h-3.5 w-3.5" /> Save Version</button>
-          <button className="run" onClick={onRunSimulation} disabled={backtestLoading}><Play className="h-3.5 w-3.5" /> {backtestLoading ? "Running..." : "Run Simulation"}</button>
+          <button onClick={onSaveVersion} disabled={savingVersion}><Save className="h-3.5 w-3.5" /> {savingVersion ? "Saving..." : "Save Version"}</button>
+          <button className="run" onClick={onRunSimulation} disabled={runningSimulation}><Play className="h-3.5 w-3.5" /> {runningSimulation ? "Running..." : "Run Simulation"}</button>
           <Bell className="h-3.5 w-3.5" />
           <CircleUser className="h-3.5 w-3.5" />
         </div>
@@ -181,6 +254,17 @@ export default function SandboxPlaygroundPage() {
             <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="sbx-preview-chart">
               <path d={linePath} fill="none" stroke="#00ff9d" strokeWidth="0.7" />
             </svg>
+          </section>
+
+          <section className="sbx-panel">
+            <div className="sbx-panel-head"><p>AI Agent Workflow</p></div>
+            <div className="sbx-version-row">
+              {(workflowSteps.length ? workflowSteps : [{ agent: "WorkflowAgent", status: "warning", detail: "Run a simulation to view agent workflow." }]).map((step, idx) => (
+                <span key={`${step.agent}-${idx}`} className={step.status === "error" ? "down" : "up"}>
+                  {step.agent}: {step.detail}
+                </span>
+              ))}
+            </div>
           </section>
 
           <section className="sbx-panel">
@@ -246,16 +330,36 @@ export default function SandboxPlaygroundPage() {
       <footer className="sbx-footer">
         <div className="sbx-version-row">
           <span>Version History</span>
-          <span className="up">v2.1.3</span>
-          <span>v2.1.2</span>
-          <span>v2.1.1</span>
-          <span>v2.1.0</span>
-          <span className="up">v2.1.3 · Auto-saved 2m ago</span>
+          {(versions.length ? versions : []).slice(0, 4).map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              className={selectedVersionId === v.id ? "up" : ""}
+              onClick={() => {
+                setSelectedVersionId(v.id)
+                if (v.result_id) {
+                  setSandboxResult((prev) => ({ ...(prev || {}), id: v.result_id, metrics: v.metrics || {} }))
+                }
+              }}
+            >
+              {v.label}
+            </button>
+          ))}
+          {versions[0]?.created_at ? <span className="up">Latest · {versions[0].created_at.slice(11, 16)} UTC</span> : null}
         </div>
         <div className="sbx-footer-actions">
           <button onClick={() => navigate("/app/compare")}>Compare Versions</button>
-          <button onClick={() => navigate("/app/strategy-lab")}>Restore Version</button>
-          <button onClick={() => navigate("/app/trade-analytics")}>Open Analytics</button>
+          <button onClick={onRestoreVersion}>Restore Version</button>
+          <button onClick={() => {
+            const latestResultId = sandboxResult?.id || versions.find((v) => v.result_id)?.result_id
+            if (latestResultId) {
+              navigate(`/app/results/${latestResultId}`)
+              return
+            }
+            addToast("warning", "Run a simulation first to open analytics")
+          }}>
+            Open Analytics
+          </button>
         </div>
       </footer>
     </div>

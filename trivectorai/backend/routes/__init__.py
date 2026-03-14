@@ -4,7 +4,8 @@ from .backtest import router as backtest_router
 from .dashboard import router as dashboard_router
 from .health import router as health_router
 from .history import router as history_router
+from .sandbox import router as sandbox_router
 from .strategy import router as strategy_router
 from .strategy_builder import router as strategy_builder_router
 
-__all__ = ["backtest_router", "backtest_agentic_router", "backtest_config_router", "dashboard_router", "health_router", "history_router", "strategy_router", "strategy_builder_router"]
+__all__ = ["backtest_router", "backtest_agentic_router", "backtest_config_router", "dashboard_router", "health_router", "history_router", "sandbox_router", "strategy_router", "strategy_builder_router"]
