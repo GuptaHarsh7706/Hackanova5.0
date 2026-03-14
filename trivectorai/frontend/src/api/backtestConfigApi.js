@@ -35,6 +35,15 @@ export const getBacktestAssets = async (assetClass = "equity") => {
   }
 }
 
+export const addBacktestAsset = async ({ symbol, asset_class = "equity" }) => {
+  try {
+    const { data } = await api.post("/assets", { symbol, asset_class })
+    return data
+  } catch (error) {
+    throw new Error(toError(error))
+  }
+}
+
 export const getDataSources = async () => {
   try {
     const { data } = await api.get("/data-sources")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import google.generativeai as genai
@@ -409,6 +410,12 @@ _CONVERSATIONAL_KEYWORDS = {
     "good morning", "good evening", "good afternoon",
 }
 
+_QUESTION_STARTERS = {
+    "what", "why", "how", "when", "which", "can", "could", "should", "is", "are", "do", "does", "where"
+}
+
+_TIMEFRAME_VALUES = {"1m", "5m", "15m", "1h", "4h", "1d", "daily", "hourly", "weekly"}
+
 _INDICATOR_QA: dict[str, str] = {
     "rsi": (
         "RSI (Relative Strength Index) is a momentum oscillator from 0–100.\n"
@@ -456,13 +463,94 @@ _IDENTITY_RESPONSE = (
 
 def _is_general_conversation(message: str) -> bool:
     """Return True when the message looks like general chat rather than a strategy."""
-    msg = message.lower().strip()
+    raw = message.strip()
+    msg = raw.lower()
+    if not msg:
+        return True
+
+    # Keep short structured replies (for clarification turns) in strategy flow.
+    # Examples: "AAPL", "15m", "2%", "stop loss 3%"
+    if _looks_like_structured_followup(raw):
+        return False
+
+    if _looks_like_strategy_instruction(msg):
+        return False
+
+    is_question = "?" in msg or (msg.split() and msg.split()[0] in _QUESTION_STARTERS)
+    if is_question:
+        return True
+
     has_conv = any(kw in msg for kw in _CONVERSATIONAL_KEYWORDS)
     has_strat = any(kw in msg for kw in _STRATEGY_KEYWORDS)
     if has_conv and not has_strat:
         return True
-    if len(msg.split()) <= 6 and not has_strat:
+
+    # Generic short text without strategy syntax should stay conversational.
+    if len(msg.split()) <= 8 and not has_strat:
         return True
+
+    return False
+
+
+def _looks_like_strategy_instruction(msg: str) -> bool:
+    """Detect explicit strategy-building language that should be parsed."""
+    if not msg:
+        return False
+
+    # Explicit entry/exit command language.
+    explicit_phrases = [
+        "buy when",
+        "sell when",
+        "enter when",
+        "exit when",
+        "go long",
+        "go short",
+        "backtest",
+        "strategy:",
+        "entry:",
+        "exit:",
+    ]
+    if any(p in msg for p in explicit_phrases):
+        return True
+
+    # Comparison-based rule syntax implies strategy logic.
+    if re.search(r"(rsi|macd|sma|ema|bollinger|atr).*(<|>|<=|>=|cross|crosses)", msg):
+        return True
+
+    # "when" + trading verb usually indicates strategy rule text.
+    if "when" in msg and any(v in msg for v in ("buy", "sell", "entry", "exit", "long", "short")):
+        return True
+
+    return False
+
+
+def _looks_like_structured_followup(msg: str) -> bool:
+    """Detect terse follow-up answers that should continue parsing flow."""
+    raw = msg.strip()
+    lower = raw.lower()
+    token = raw.upper()
+
+    # Common single-token ticker / pair formats.
+    ticker_patterns = [
+        r"^[A-Z]{1,5}$",            # AAPL, TSLA
+        r"^[A-Z]{3,6}USDT$",        # BTCUSDT
+        r"^[A-Z]{3,6}-USD$",        # BTC-USD
+        r"^[A-Z]{6}$",              # EURUSD
+    ]
+    # Treat uppercase symbol-like inputs as ticker answers.
+    # Avoid classifying plain lowercase words like "hello" as tickers.
+    if raw == token and any(re.match(p, token) for p in ticker_patterns):
+        return True
+
+    if lower in _TIMEFRAME_VALUES:
+        return True
+
+    # Answers like "2%", "stop loss 3%", "take profit 6%"
+    if re.search(r"\b\d+(\.\d+)?%\b", lower):
+        return True
+    if any(k in lower for k in ("stop loss", "take profit", "position size", "ticker", "timeframe")) and re.search(r"\d", lower):
+        return True
+
     return False
 
 
@@ -470,6 +558,14 @@ def _rule_based_chat_response(message: str) -> str:
     msg = message.lower()
     if any(t in msg for t in ("who are you", "what do you do", "what can you")):
         return _IDENTITY_RESPONSE
+    if "timeframe" in msg and any(t in msg for t in ("what", "which", "best", "use", "should")):
+        return (
+            "Great question. A practical default is:\n"
+            "• Swing trades: 4h or 1d\n"
+            "• Intraday: 15m or 1h\n"
+            "• Scalping: 1m or 5m\n\n"
+            "If you're starting with RSI strategies, 1h or 4h is usually a good balance between signal quality and trade frequency."
+        )
     for keyword, answer in _INDICATOR_QA.items():
         if keyword in msg:
             return answer

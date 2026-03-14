@@ -17,6 +17,7 @@ export default function MainLayout() {
     location.pathname.startsWith("/app/trade-analytics") ||
     location.pathname.startsWith("/app/sandbox") ||
     location.pathname.startsWith("/app/live-signals") ||
+    location.pathname.startsWith("/app/market-data") ||
     location.pathname === "/app/compare"
 
   return (

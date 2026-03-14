@@ -13,6 +13,7 @@ import StrategyBuilderPage from "./pages/StrategyBuilderPage"
 import TradeAnalyticsPage from "./pages/TradeAnalyticsPage"
 import SandboxPlaygroundPage from "./pages/SandboxPlaygroundPage"
 import LiveSignalsPage from "./pages/LiveSignalsPage"
+import MarketDataCenterPage from "./pages/MarketDataCenterPage"
 import { useStrategyStore } from "./store/useStrategyStore"
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="strategy-lab" element={<StrategyBuilderPage />} />
           <Route path="sandbox" element={<SandboxPlaygroundPage />} />
           <Route path="backtests" element={<BacktestConfigPage />} />
+          <Route path="market-data" element={<MarketDataCenterPage />} />
           <Route path="live-signals" element={<LiveSignalsPage />} />
           <Route path="results/:id" element={<ResultsPage />} />
           <Route path="trade-analytics" element={<TradeAnalyticsPage />} />

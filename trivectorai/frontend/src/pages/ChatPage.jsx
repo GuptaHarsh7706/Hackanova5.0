@@ -63,7 +63,7 @@ export default function ChatPage() {
           <Link to="/app/strategy-lab">Strategy Lab</Link>
           <Link to="/app/sandbox">Indicators</Link>
           <Link to="/app/live-signals">Live Signals</Link>
-          <Link to="/app/backtests">Market Data</Link>
+          <Link to="/app/market-data">Market Data</Link>
           <Link to="/app/trade-analytics">Analytics</Link>
         </nav>
         <div className="bloom-tools">

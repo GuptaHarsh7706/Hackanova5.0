@@ -7,6 +7,7 @@ import os
 import random
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -34,6 +35,16 @@ CRYPTO_MAP = {
     "ETH": "ETH-USD",
     "BNB": "BNB-USD",
     "SOL": "SOL-USD",
+}
+
+COMMODITY_FOREX_MAP = {
+    "GC=F": ("Gold", "commodity", 2150),
+    "SI=F": ("Silver", "commodity", 24),
+    "CL=F": ("Crude Oil", "commodity", 78),
+    "NG=F": ("Natural Gas", "commodity", 2.7),
+    "EURUSD=X": ("EUR/USD", "forex", 1.09),
+    "GBPUSD=X": ("GBP/USD", "forex", 1.28),
+    "USDJPY=X": ("USD/JPY", "forex", 149.5),
 }
 
 SECTORS = [
@@ -119,10 +130,24 @@ def _mock_quote(symbol: str, base: float) -> Quote:
     return Quote(symbol=symbol, price=round(price, 2), change_pct=round(change * 100, 2), volume=volume, market_cap=market_cap)
 
 
+def _run_with_timeout(fn, timeout_sec: float):
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(fn)
+        try:
+            return future.result(timeout=max(0.1, timeout_sec))
+        except FuturesTimeoutError:
+            return None
+        except Exception:
+            return None
+
+
 def _fetch_fast_quote(symbol: str) -> Quote | None:
     try:
         tk = yf.Ticker(symbol)
-        hist = tk.history(period="2d", interval="1d", auto_adjust=False)
+        hist = _run_with_timeout(
+            lambda: tk.history(period="2d", interval="1d", auto_adjust=False, timeout=2),
+            timeout_sec=2.5,
+        )
         if hist is None or hist.empty:
             return None
         close = float(hist["Close"].iloc[-1])
@@ -226,7 +251,12 @@ def get_crypto_assets(symbols: list[str] | None = None) -> list[dict]:
         quote = quote_for_symbol(yf_symbol, base=1000)
         spark = []
         try:
-            hist = yf.download(yf_symbol, period="2d", interval="1h", progress=False, auto_adjust=False)
+            hist = _run_with_timeout(
+                lambda: yf.download(yf_symbol, period="2d", interval="1h", progress=False, auto_adjust=False, timeout=3),
+                timeout_sec=3.5,
+            )
+            if hist is None:
+                raise RuntimeError("download_timeout")
             close_series = hist["Close"] if "Close" in hist else pd.Series(dtype=float)
             spark = _sparkline_from_series(close_series, points=24)
         except Exception:
@@ -247,6 +277,131 @@ def get_crypto_assets(symbols: list[str] | None = None) -> list[dict]:
         )
     _cache_set(f"crypto::{crypto_key}", CRYPTO_CACHE_TTL_SEC, rows)
     return rows
+
+
+def get_commodities_forex() -> list[dict]:
+    key = "commodities_forex"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    now = _utc_now()
+    rows = []
+    for symbol, (name, category, base) in COMMODITY_FOREX_MAP.items():
+        q = quote_for_symbol(symbol, base=base)
+        rows.append(
+            {
+                "symbol": symbol,
+                "name": name,
+                "category": category,
+                "price": q.price,
+                "change_pct": q.change_pct,
+                "timestamp": now,
+            }
+        )
+    _cache_set(key, 12, rows)
+    return rows
+
+
+def build_order_book(symbol: str) -> dict:
+    key = f"order_book::{symbol}"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    q = quote_for_symbol(symbol, base=100)
+    now = _utc_now()
+    mid = float(q.price)
+    rng = random.Random(_seed(symbol) + int(now.timestamp() // 10))
+
+    bids = []
+    asks = []
+    for i in range(6):
+        delta = 0.01 * (i + 1)
+        bid_px = round(mid - delta, 2)
+        ask_px = round(mid + delta, 2)
+        bid_size = round(0.6 + rng.random() * 5.4, 3)
+        ask_size = round(0.6 + rng.random() * 5.4, 3)
+        bids.append({"price": bid_px, "size": bid_size})
+        asks.append({"price": ask_px, "size": ask_size})
+
+    spread_abs = round(asks[0]["price"] - bids[0]["price"], 4)
+    spread_pct = round((spread_abs / max(mid, 0.0001)) * 100, 5)
+    payload = {
+        "symbol": symbol,
+        "bids": bids,
+        "asks": asks,
+        "spread_abs": spread_abs,
+        "spread_pct": spread_pct,
+        "timestamp": now,
+    }
+    _cache_set(key, 5, payload)
+    return payload
+
+
+def build_market_overview(global_markets: list[dict], watchlist: list[dict], crypto: list[dict]) -> dict:
+    key = "market_overview"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    merged = []
+    for row in global_markets:
+        merged.append(float(row.get("change_pct") or 0.0))
+    for row in watchlist:
+        merged.append(float(row.get("change_pct") or 0.0))
+    for row in crypto:
+        merged.append(float(row.get("change_24h_pct") or 0.0))
+
+    positives = sum(1 for x in merged if x >= 0)
+    breadth_ratio_pct = round((positives / max(1, len(merged))) * 100, 2)
+
+    # Approximation model for macro card values in absence of a dedicated feed.
+    total_market_cap_trn = round(45 + (sum(abs(x) for x in merged) % 22), 2)
+    total_24h_volume_bln = round(95 + (len(merged) * 1.7), 2)
+
+    payload = {
+        "total_market_cap_trn": total_market_cap_trn,
+        "total_24h_volume_bln": total_24h_volume_bln,
+        "breadth_ratio_pct": breadth_ratio_pct,
+        "active_symbols": len(merged),
+    }
+    _cache_set(key, 8, payload)
+    return payload
+
+
+def build_gainers_losers(watchlist: list[dict], crypto: list[dict]) -> tuple[list[dict], list[dict]]:
+    key = "movers"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    merged = []
+    for row in watchlist:
+        merged.append(
+            {
+                "symbol": row.get("symbol"),
+                "name": row.get("symbol"),
+                "change_pct": float(row.get("change_pct") or 0.0),
+                "last_price": float(row.get("price") or 0.0),
+            }
+        )
+    for row in crypto:
+        merged.append(
+            {
+                "symbol": row.get("symbol"),
+                "name": row.get("symbol"),
+                "change_pct": float(row.get("change_24h_pct") or 0.0),
+                "last_price": float(row.get("price") or 0.0),
+            }
+        )
+
+    ranked = sorted(merged, key=lambda x: x["change_pct"], reverse=True)
+    gainers = ranked[:5]
+    losers = sorted(merged, key=lambda x: x["change_pct"])[:5]
+    out = (gainers, losers)
+    _cache_set(key, 8, out)
+    return out
 
 
 def _mock_history(symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
@@ -286,7 +441,12 @@ def get_chart_df(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
     interval, period = _TIMEFRAME_TO_INTERVAL[timeframe]
 
     try:
-        hist = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=False)
+        hist = _run_with_timeout(
+            lambda: yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=False, timeout=3),
+            timeout_sec=3.5,
+        )
+        if hist is None:
+            raise RuntimeError("download_timeout")
         if hist is None or hist.empty:
             raise RuntimeError("empty history")
         if timeframe == "4h":
@@ -612,12 +772,25 @@ def build_dashboard_snapshot(symbol: str = "^GSPC", timeframe: str = "1h", watch
     sectors = build_sector_risk()
     insight = build_ai_insight(symbol=symbol, timeframe=timeframe, chart_payload=chart_payload, news=news, sectors=sectors)
 
+    global_markets = get_global_markets()
+    watch_assets = get_watchlist_assets(watch)
+    crypto_assets = get_crypto_assets(["BTC", "ETH", "BNB", "SOL"])
+    commodities_forex = get_commodities_forex()
+    order_book = build_order_book(watch[0] if watch else symbol)
+    market_overview = build_market_overview(global_markets, watch_assets, crypto_assets)
+    gainers, losers = build_gainers_losers(watch_assets, crypto_assets)
+
     payload = {
-        "global_markets": get_global_markets(),
-        "watchlist": get_watchlist_assets(watch),
-        "crypto": get_crypto_assets(["BTC", "ETH", "BNB", "SOL"]),
+        "global_markets": global_markets,
+        "watchlist": watch_assets,
+        "crypto": crypto_assets,
+        "commodities_forex": commodities_forex,
+        "order_book": order_book,
         "news": news,
         "sector_risk": sectors,
+        "market_overview": market_overview,
+        "gainers": gainers,
+        "losers": losers,
         "ai_insight": insight,
         "generated_at": _utc_now(),
         "refresh_after_sec": 10,

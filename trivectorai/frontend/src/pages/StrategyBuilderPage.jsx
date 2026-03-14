@@ -703,7 +703,7 @@ export default function StrategyBuilderPage() {
           <Link to="/app/sandbox">Sandbox</Link>
           <Link to="/app/backtests">Backtests</Link>
           <Link to="/app/live-signals">Live Signals</Link>
-          <a href="#">Market Data</a>
+          <Link to="/app/market-data">Market Data</Link>
           <a href="#">Analytics</a>
         </nav>
         <div className="lab-tools">

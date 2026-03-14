@@ -36,6 +36,43 @@ class CryptoAsset(BaseModel):
     timestamp: datetime
 
 
+class CommodityFxQuote(BaseModel):
+    symbol: str
+    name: str
+    category: Literal["commodity", "forex"]
+    price: float
+    change_pct: float
+    timestamp: datetime
+
+
+class OrderBookLevel(BaseModel):
+    price: float
+    size: float
+
+
+class OrderBookSnapshot(BaseModel):
+    symbol: str
+    bids: list[OrderBookLevel] = Field(default_factory=list)
+    asks: list[OrderBookLevel] = Field(default_factory=list)
+    spread_abs: float
+    spread_pct: float
+    timestamp: datetime
+
+
+class MarketMoverItem(BaseModel):
+    symbol: str
+    name: str
+    change_pct: float
+    last_price: float
+
+
+class MarketOverview(BaseModel):
+    total_market_cap_trn: float
+    total_24h_volume_bln: float
+    breadth_ratio_pct: float
+    active_symbols: int
+
+
 class Candle(BaseModel):
     ts: datetime
     open: float
@@ -93,8 +130,13 @@ class DashboardSnapshotResponse(BaseModel):
     global_markets: list[MarketQuote]
     watchlist: list[WatchlistAsset]
     crypto: list[CryptoAsset]
+    commodities_forex: list[CommodityFxQuote]
+    order_book: OrderBookSnapshot
     news: list[NewsItem]
     sector_risk: list[SectorRiskItem]
+    market_overview: MarketOverview
+    gainers: list[MarketMoverItem]
+    losers: list[MarketMoverItem]
     ai_insight: AiInsightResponse
     generated_at: datetime
     refresh_after_sec: int = 10

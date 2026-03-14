@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
 import {
+  addBacktestAsset,
   estimateDataRangeMeta,
   getSavedBacktestConfig,
   getBacktestAssets,
@@ -43,8 +44,11 @@ export default function BacktestConfigPage() {
   const [takeProfit, setTakeProfit] = useState(Number(currentStrategy?.take_profit_pct ?? 5))
   const [maxPositionUsd, setMaxPositionUsd] = useState(5000)
   const [maxDrawdown, setMaxDrawdown] = useState(15)
+  const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(3)
   const [commission, setCommission] = useState(0.5)
   const [slippage, setSlippage] = useState(0.05)
+  const [newAssetSymbol, setNewAssetSymbol] = useState("")
+  const [addingAsset, setAddingAsset] = useState(false)
   const [strategySummary, setStrategySummary] = useState(null)
   const [scoreData, setScoreData] = useState(null)
   const [validationData, setValidationData] = useState(null)
@@ -82,7 +86,7 @@ export default function BacktestConfigPage() {
       take_profit_pct: takeProfit,
       max_position_usd: maxPositionUsd,
       max_drawdown_pct: maxDrawdown,
-      max_concurrent_trades: 3,
+        max_concurrent_trades: maxConcurrentTrades,
     },
     transaction_costs: {
       commission_per_trade: commission,
@@ -151,12 +155,32 @@ export default function BacktestConfigPage() {
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [timeframe, startDate, endDate, selectedAssets, initialCapital, positionSizing, positionPct, stopLoss, takeProfit, maxPositionUsd, maxDrawdown, commission, slippage, dataSource, assetClass])
+  }, [timeframe, startDate, endDate, selectedAssets, initialCapital, positionSizing, positionPct, stopLoss, takeProfit, maxPositionUsd, maxDrawdown, maxConcurrentTrades, commission, slippage, dataSource, assetClass])
 
   const toggleAsset = (ticker) => {
     setSelectedAssets((prev) =>
       prev.includes(ticker) ? prev.filter((x) => x !== ticker) : [...prev, ticker]
     )
+  }
+
+  const onAddAsset = async () => {
+    const symbol = newAssetSymbol.trim().toUpperCase()
+    if (!symbol) return
+    setAddingAsset(true)
+    setSaveStatus("")
+    try {
+      await addBacktestAsset({ symbol, asset_class: assetClass })
+      const assets = await getBacktestAssets(assetClass)
+      const symbols = (assets?.items || []).map((item) => item.symbol)
+      if (symbols.length > 0) setAssetUniverse(symbols)
+      setSelectedAssets((prev) => (prev.includes(symbol) ? prev : [...prev, symbol]))
+      setNewAssetSymbol("")
+      setSaveStatus(`Added asset ${symbol}`)
+    } catch (error) {
+      setSaveStatus(error.message || "Failed to add asset")
+    } finally {
+      setAddingAsset(false)
+    }
   }
 
   const onSave = async () => {
@@ -194,6 +218,7 @@ export default function BacktestConfigPage() {
       setTakeProfit(Number(config.risk_parameters?.take_profit_pct ?? takeProfit))
       setMaxPositionUsd(Number(config.risk_parameters?.max_position_usd ?? maxPositionUsd))
       setMaxDrawdown(Number(config.risk_parameters?.max_drawdown_pct ?? maxDrawdown))
+      setMaxConcurrentTrades(Number(config.risk_parameters?.max_concurrent_trades ?? maxConcurrentTrades))
       setCommission(Number(config.transaction_costs?.commission_per_trade ?? commission))
       setSlippage(Number(config.transaction_costs?.slippage_pct ?? slippage))
       setSaveStatus(`Loaded ${config.id || configId}`)
@@ -324,7 +349,7 @@ export default function BacktestConfigPage() {
           <Link to="/app/strategy-lab">Strategy Lab</Link>
           <Link className="active" to="/app/backtests">Backtests</Link>
           <Link to="/app/live-signals">Live Signals</Link>
-          <a href="#">Market Data</a>
+          <Link to="/app/market-data">Market Data</Link>
           <a href="#">Analytics</a>
         </nav>
         <div className="lab-tools">
@@ -337,7 +362,7 @@ export default function BacktestConfigPage() {
       <div className="bt-grid">
         <aside className="bt-left">
           <section className="lab-panel">
-            <h2 className="bt-name">Golden Cross Momentum</h2>
+            <h2 className="bt-name">{strategySummary?.strategy_name || "Backtest Strategy"}</h2>
             <div className="bt-meta">
               <div><span>Strategy Type</span><b>{strategySummary?.strategy_type || "Momentum Crossover"}</b></div>
               <div><span>Timeframe</span><b>{timeframe}</b></div>
@@ -358,7 +383,17 @@ export default function BacktestConfigPage() {
                 </button>
               ))}
             </div>
-            <button className="bt-add-asset">+ Add More Assets</button>
+            <div className="mt-2 flex gap-2">
+              <input
+                className="flex-1 rounded-sm border border-[var(--border-default)] bg-[rgba(0,0,0,.35)] px-2 py-1 text-[11px]"
+                placeholder="Add symbol (e.g. NFLX)"
+                value={newAssetSymbol}
+                onChange={(e) => setNewAssetSymbol(e.target.value)}
+              />
+              <button className="bt-add-asset" disabled={addingAsset || !newAssetSymbol.trim()} onClick={onAddAsset}>
+                {addingAsset ? "Adding..." : "+ Add"}
+              </button>
+            </div>
           </section>
 
           <section className="lab-panel">
@@ -390,6 +425,16 @@ export default function BacktestConfigPage() {
               <span className="right" />
             </div>
             <div className="bt-range-dates"><span>{startDate}</span><span>{endDate}</span></div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+              <label className="flex flex-col gap-1">
+                Start Date
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              </label>
+              <label className="flex flex-col gap-1">
+                End Date
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              </label>
+            </div>
             <div className="bt-range-presets">
               {['1Y', '2Y', '5Y', '10Y', 'MAX'].map((x) => (
                 <button
@@ -442,9 +487,22 @@ export default function BacktestConfigPage() {
               <div><span>Max Position Size</span><strong>${maxPositionUsd.toLocaleString()}</strong><input type="range" min={1000} max={20000} step={500} value={maxPositionUsd} onChange={(e) => setMaxPositionUsd(Number(e.target.value))} /></div>
               <div><span>Leverage</span><strong>1x</strong></div>
               <div><span>Max Drawdown</span><strong className="down">{maxDrawdown}%</strong><input type="range" min={5} max={35} value={maxDrawdown} onChange={(e) => setMaxDrawdown(Number(e.target.value))} /></div>
-              <div><span>Max Concurrent Trades</span><strong>3</strong></div>
+              <div><span>Max Concurrent Trades</span><strong>{maxConcurrentTrades}</strong><input type="range" min={1} max={15} value={maxConcurrentTrades} onChange={(e) => setMaxConcurrentTrades(Number(e.target.value))} /></div>
             </div>
           </section>
+
+          {validationData?.issues?.length ? (
+            <section className="lab-panel">
+              <p className="lab-title">Validation & Risk Notes</p>
+              <ul className="space-y-1 text-[11px]">
+                {validationData.issues.map((issue, idx) => (
+                  <li key={`${issue.field}-${idx}`} className={issue.severity === "error" ? "down" : "text-[var(--text-secondary)]"}>
+                    {issue.severity.toUpperCase()}: {issue.message}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <section className="lab-panel">
             <p className="lab-title">Transaction Costs & Slippage</p>
@@ -468,7 +526,7 @@ export default function BacktestConfigPage() {
             <CheckCircle2 className="h-8 w-8 text-[#00ff66]" />
             <p>Ready to Run</p>
             <span>Configuration Score</span>
-            <strong>{scoreData?.score ?? fallbackReadyScore}/100</strong>
+            <strong>{scoreData?.score ?? validationData?.readiness_score ?? fallbackReadyScore}/100</strong>
           </section>
 
           <section className="lab-panel">
@@ -488,9 +546,9 @@ export default function BacktestConfigPage() {
             <p className="lab-title">Estimated Runtime</p>
             <p className="bt-runtime">~{scoreData?.estimated_runtime_seconds || rangeMeta?.estimated_runtime_seconds || 45} seconds</p>
             <div className="bt-runtime-bars">
-              <span style={{ width: '42%' }} />
-              <span style={{ width: '28%' }} />
-              <span style={{ width: '20%' }} />
+              <span style={{ width: `${Math.max(15, Math.min(80, (scoreData?.estimated_runtime_seconds || rangeMeta?.estimated_runtime_seconds || 45) * 0.9))}%` }} />
+              <span style={{ width: `${Math.max(10, Math.min(60, (scoreData?.estimated_runtime_seconds || rangeMeta?.estimated_runtime_seconds || 45) * 0.55))}%` }} />
+              <span style={{ width: `${Math.max(8, Math.min(40, (scoreData?.estimated_runtime_seconds || rangeMeta?.estimated_runtime_seconds || 45) * 0.35))}%` }} />
             </div>
           </section>
 
@@ -512,8 +570,8 @@ export default function BacktestConfigPage() {
       </div>
 
       <footer className="lab-footer">
-        <span>Configuration auto-saved 30s ago</span>
-        <span><b className="up">●</b> Bloomberg Data: Connected</span>
+        <span>{savedConfigId ? `Last configuration: ${savedConfigId}` : "No configuration saved yet"}</span>
+        <span><b className="up">●</b> {(dataSources.find((s) => s.id === dataSource)?.label || dataSource || "Data Source")}: {(dataSources.find((s) => s.id === dataSource)?.connected ?? true) ? "Connected" : "Unavailable"}</span>
         <span>System Ready</span>
       </footer>
     </div>

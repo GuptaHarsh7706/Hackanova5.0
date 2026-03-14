@@ -11,6 +11,7 @@ from database.repository import (
     get_backtest_configuration,
     get_strategy_by_id,
     get_watchlist_symbols,
+    list_saved_strategies,
     list_backtest_configurations,
     save_backtest_configuration,
 )
@@ -45,6 +46,14 @@ _CONFIG_CACHE: dict[str, dict] = {}
 async def strategy_summary(strategy_id: str | None = None):
     strategy = get_strategy_by_id(strategy_id) if strategy_id else None
 
+    # If strategy_id is not provided (or not found), use most recently saved strategy.
+    if not strategy:
+        try:
+            latest = list_saved_strategies(limit=1)
+            strategy = latest[0] if latest else None
+        except Exception:
+            strategy = None
+
     if not strategy:
         return StrategySummaryResponse(
             strategy_id=None,
@@ -58,10 +67,17 @@ async def strategy_summary(strategy_id: str | None = None):
     indicators = strategy.get("indicators") or []
     if not indicators and isinstance(strategy.get("entry_conditions"), list):
         indicators = strategy["entry_conditions"]
+    if not indicators and isinstance(strategy.get("entry_rules"), list):
+        indicators = strategy["entry_rules"]
+
+    strategy_name = strategy.get("name") or strategy.get("title")
+    if not strategy_name:
+        raw_input = str(strategy.get("raw_input") or "").strip()
+        strategy_name = raw_input[:60] + ("..." if len(raw_input) > 60 else "") if raw_input else "Parsed Strategy"
 
     return StrategySummaryResponse(
         strategy_id=strategy.get("id"),
-        strategy_name=strategy.get("name") or strategy.get("title") or "Parsed Strategy",
+        strategy_name=strategy_name,
         strategy_type=strategy.get("strategy_type") or "Custom Rule Strategy",
         timeframe=strategy.get("timeframe") or "1h",
         indicators_active=max(1, len(indicators) if isinstance(indicators, list) else 1),
