@@ -189,6 +189,7 @@ def _build_parse_details(strategy: dict | None, validation: dict | None, user_me
             "entry_rule_count": len(entry_rules),
             "exit_rule_count": len(exit_rules),
         },
+        "dsl_preview": strategy.get("dsl_script", ""),
         "reasoning_summary": reasoning_summary,
         "context_profile": context_profile,
         "agent_assignments": agent_assignments,

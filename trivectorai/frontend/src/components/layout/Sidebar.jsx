@@ -1,4 +1,4 @@
-import { GitCompare, History, MessageSquare, Plus, Settings, TrendingUp, X } from "lucide-react"
+import { BarChart3, GitCompare, History, MessageSquare, Plus, Radio, Settings, TrendingUp } from "lucide-react"
 import { NavLink, useNavigate } from "react-router-dom"
 
 import { useStrategyStore } from "../../store/useStrategyStore"
@@ -6,6 +6,9 @@ import Button from "../ui/Button"
 
 const nav = [
   { to: "/app",          label: "Chat",     icon: MessageSquare, end: true },
+  { to: "/app/sandbox", label: "Sandbox", icon: BarChart3 },
+  { to: "/app/live-signals", label: "Live Signals", icon: Radio },
+  { to: "/app/trade-analytics", label: "Analytics", icon: BarChart3 },
   { to: "/app/history",  label: "History",  icon: History },
   { to: "/app/compare",  label: "Compare",  icon: GitCompare },
   { to: "/app/settings", label: "Settings", icon: Settings },

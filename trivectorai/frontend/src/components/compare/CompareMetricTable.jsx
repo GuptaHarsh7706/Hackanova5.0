@@ -1,10 +1,15 @@
 import Badge from "../ui/Badge"
 import EmptyState from "../ui/EmptyState"
 
+const toNum = (value, fallback = 0) => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
 export default function CompareMetricTable({ items = [] }) {
   if (items.length < 2) {
     return (
-      <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-3">
+      <div className="cp-panel">
         <EmptyState
           title="Select 2 strategies"
           description="Choose at least two strategies above to unlock side-by-side metrics."
@@ -14,17 +19,17 @@ export default function CompareMetricTable({ items = [] }) {
   }
 
   const [a, b] = items
-  const left = a.results
-  const right = b.results
+  const left = a.results || {}
+  const right = b.results || {}
 
   const rows = [
-    ["Total Return", left.total_return_pct, right.total_return_pct, "high", "%"],
-    ["Sharpe Ratio", left.sharpe_ratio, right.sharpe_ratio, "high", ""],
-    ["Max Drawdown", left.max_drawdown_pct, right.max_drawdown_pct, "low", "%"],
-    ["Win Rate", left.win_rate_pct, right.win_rate_pct, "high", "%"],
-    ["Total Trades", left.total_trades, right.total_trades, "na", ""],
-    ["CAGR", left.cagr_pct, right.cagr_pct, "high", "%"],
-    ["Profit Factor", left.profit_factor, right.profit_factor, "high", ""],
+    ["Total Return", toNum(left.total_return_pct), toNum(right.total_return_pct), "high", "%"],
+    ["Sharpe Ratio", toNum(left.sharpe_ratio), toNum(right.sharpe_ratio), "high", ""],
+    ["Max Drawdown", toNum(left.max_drawdown_pct), toNum(right.max_drawdown_pct), "low", "%"],
+    ["Win Rate", toNum(left.win_rate_pct ?? left.win_rate), toNum(right.win_rate_pct ?? right.win_rate), "high", "%"],
+    ["Total Trades", toNum(left.total_trades), toNum(right.total_trades), "na", ""],
+    ["CAGR", toNum(left.cagr_pct), toNum(right.cagr_pct), "high", "%"],
+    ["Profit Factor", toNum(left.profit_factor), toNum(right.profit_factor), "high", ""],
   ]
 
   const winner = (x, y, mode) => {
@@ -35,22 +40,25 @@ export default function CompareMetricTable({ items = [] }) {
   }
 
   return (
-    <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-3">
-      <table className="w-full text-sm">
-        <thead className="text-[var(--text-secondary)]">
+    <div className="cp-panel cp-table-panel">
+      <div className="cp-head">
+        <p>Performance Metrics Matrix</p>
+      </div>
+      <table className="cp-table">
+        <thead>
           <tr>
-            <th className="py-2 text-left">Metric</th>
-            <th className="text-left">{a.name}</th>
-            <th className="text-left">{b.name}</th>
-            <th className="text-left">Winner</th>
+            <th>Metric</th>
+            <th>{a.name}</th>
+            <th>{b.name}</th>
+            <th>Winner</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(([m, x, y, mode, suffix]) => {
             const w = winner(x, y, mode)
             return (
-              <tr key={m} className="border-t border-[var(--border-subtle)] text-xs">
-                <td className="py-2">{m}</td>
+              <tr key={m}>
+                <td>{m}</td>
                 <td>{x}{suffix}</td>
                 <td>{y}{suffix}</td>
                 <td>{w === "-" ? "-" : <Badge variant="success">{w}</Badge>}</td>

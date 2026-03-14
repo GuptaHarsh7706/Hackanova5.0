@@ -19,7 +19,7 @@ export default function StrategyPanel({ onRunBacktest }) {
   if (!strategy) return <EmptyState icon={FileJson} title="No strategy parsed yet" description="Start chatting to see your strategy appear here." />
 
   return (
-    <aside className="h-full w-[380px] animate-panel-slide border-l border-[var(--border-default)] bg-[var(--bg-surface)] p-3">
+    <aside className="h-full w-[380px] animate-panel-slide bg-transparent p-3">
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm font-semibold">Parsed Strategy</p>
         <div className="flex gap-1">

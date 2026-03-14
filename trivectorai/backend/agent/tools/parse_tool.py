@@ -6,6 +6,8 @@ import re
 
 import google.generativeai as genai
 
+from dsl.strategy_dsl import compile_strategy_payload, strategy_to_dsl
+
 
 PARSE_SYSTEM_PROMPT = """
 You are a trading strategy parser. Convert natural language into a structured JSON object.
@@ -231,6 +233,13 @@ def _parse_locally(text: str, base: dict | None = None) -> dict:
 def _parse_context(context: str) -> dict | None:
     if not context:
         return None
+
+
+def _finalize_strategy(strategy: dict) -> dict:
+    compiled = compile_strategy_payload(strategy)
+    output = compiled.model_dump()
+    output["dsl_script"] = strategy_to_dsl(compiled)
+    return output
     try:
         return json.loads(context)
     except Exception:
@@ -243,7 +252,10 @@ def execute_parse_tool(text: str, context: str = "") -> dict:
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
-        return {"success": True, "strategy": local_strategy}
+        try:
+            return {"success": True, "strategy": _finalize_strategy(local_strategy)}
+        except Exception:
+            return {"success": True, "strategy": local_strategy}
 
     try:
         genai.configure(api_key=api_key)
@@ -277,6 +289,12 @@ def execute_parse_tool(text: str, context: str = "") -> dict:
             merged["take_profit_pct"] = local_strategy.get("take_profit_pct")
         if not merged.get("missing_fields"):
             merged["missing_fields"] = local_strategy.get("missing_fields", [])
-        return {"success": True, "strategy": merged}
+        try:
+            return {"success": True, "strategy": _finalize_strategy(merged)}
+        except Exception:
+            return {"success": True, "strategy": merged}
     except Exception:
-        return {"success": True, "strategy": local_strategy}
+        try:
+            return {"success": True, "strategy": _finalize_strategy(local_strategy)}
+        except Exception:
+            return {"success": True, "strategy": local_strategy}

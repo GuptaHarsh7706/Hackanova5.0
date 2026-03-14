@@ -17,7 +17,7 @@ const buildPath = (points, key = "value") => {
 export default function OverlaidChart({ items = [] }) {
   if (items.length < 2) {
     return (
-      <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
+      <div className="cp-panel">
         <EmptyState title="No chart to compare yet" description="Pick two strategies to render the overlaid equity chart." />
       </div>
     )
@@ -27,18 +27,23 @@ export default function OverlaidChart({ items = [] }) {
   const pointsA = a.results?.equity_curve?.slice(-60) || []
   const pointsB = b.results?.equity_curve?.slice(-60) || []
   const benchmark = (a.results?.equity_curve || []).slice(-60)
+  const labelA = a.name || a.strategy?.ticker || "Strategy A"
+  const labelB = b.name || b.strategy?.ticker || "Strategy B"
 
   return (
-    <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
-      <svg viewBox="0 0 900 320" className="h-72 w-full">
-        <path d={buildPath(pointsA)} fill="none" stroke="#7f77dd" strokeWidth="3" />
-        <path d={buildPath(pointsB)} fill="none" stroke="#2dd4bf" strokeWidth="3" />
-        <path d={buildPath(benchmark, "benchmark")} fill="none" stroke="#9ca3af" strokeDasharray="6 6" strokeWidth="2" />
+    <div className="cp-panel cp-chart-panel">
+      <div className="cp-head">
+        <p>Equity Curve Overlay</p>
+      </div>
+      <svg viewBox="0 0 900 320" className="cp-chart">
+        <path d={buildPath(pointsA)} fill="none" stroke="#00ff9d" strokeWidth="3" />
+        <path d={buildPath(pointsB)} fill="none" stroke="#f8bf26" strokeWidth="3" />
+        <path d={buildPath(benchmark, "benchmark")} fill="none" stroke="#8fb1d8" strokeDasharray="6 6" strokeWidth="2" />
       </svg>
-      <div className="mt-2 flex gap-4 text-xs text-[var(--text-secondary)]">
-        <span>{a.name}</span>
-        <span>{b.name}</span>
-        <span>Benchmark</span>
+      <div className="cp-legend">
+        <span><i className="line-a" />{labelA}</span>
+        <span><i className="line-b" />{labelB}</span>
+        <span><i className="line-bm" />Benchmark</span>
       </div>
     </div>
   )

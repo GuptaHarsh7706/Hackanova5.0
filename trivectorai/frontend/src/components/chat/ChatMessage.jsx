@@ -4,14 +4,21 @@ import ClarificationCard from "./ClarificationCard"
 import ConfirmationCard from "./ConfirmationCard"
 
 export default function ChatMessage({ message, onRunBacktest }) {
-  const { role, content, type, strategy, missingFields } = message
+  const { role, content, type, strategy, missingFields, parseDetails, canRun, agentTrace } = message
   const isUser = role === "user"
 
   // Agent messages with type="confirmation" → render ConfirmationCard
   if (role === "agent" && type === "confirmation" && strategy) {
     return (
       <div className="message-bubble agent">
-        <ConfirmationCard strategy={strategy} content={content} onRunBacktest={onRunBacktest} />
+        <ConfirmationCard
+          strategy={strategy}
+          content={content}
+          canRun={canRun}
+          parseDetails={parseDetails}
+          agentTrace={agentTrace}
+          onRunBacktest={onRunBacktest}
+        />
       </div>
     )
   }
@@ -24,6 +31,8 @@ export default function ChatMessage({ message, onRunBacktest }) {
           content={content}
           missingFields={missingFields}
           partialStrategy={strategy}
+          parseDetails={parseDetails}
+          agentTrace={agentTrace}
         />
       </div>
     )

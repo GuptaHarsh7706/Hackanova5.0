@@ -115,6 +115,11 @@ export const clearHistory = async () => {
   return data
 }
 
+export const compareHistory = async (ids = []) => {
+  const { data } = await api.post("/history/compare", { ids })
+  return data
+}
+
 // alias for legacy import name used by SettingsPage
 export const clearHistoryApi = clearHistory
 

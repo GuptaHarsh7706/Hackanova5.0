@@ -59,6 +59,58 @@ def save_strategy(id: str, data: dict) -> None:
         )
 
 
+def get_strategy_by_id(strategy_id: str) -> dict | None:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, data, raw_input, created_at, updated_at
+            FROM strategies
+            WHERE id = %s
+            """,
+            (strategy_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    payload = _as_dict(row["data"])
+    payload["id"] = row["id"]
+    payload["raw_input"] = row.get("raw_input")
+    payload["created_at"] = _iso(row["created_at"])
+    payload["updated_at"] = _iso(row["updated_at"])
+    return payload
+
+
+def list_saved_strategies(limit: int = 100) -> list[dict]:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, ticker, timeframe, asset_class, confidence_score,
+                   raw_input, data, created_at, updated_at
+            FROM strategies
+            ORDER BY updated_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        rows = cur.fetchall()
+
+    items = []
+    for row in rows:
+        payload = _as_dict(row["data"])
+        payload["id"] = row["id"]
+        payload["ticker"] = row.get("ticker") or payload.get("ticker")
+        payload["timeframe"] = row.get("timeframe") or payload.get("timeframe")
+        payload["asset_class"] = row.get("asset_class") or payload.get("asset_class")
+        payload["confidence_score"] = row.get("confidence_score") if row.get("confidence_score") is not None else payload.get("confidence_score")
+        payload["raw_input"] = row.get("raw_input")
+        payload["created_at"] = _iso(row["created_at"])
+        payload["updated_at"] = _iso(row["updated_at"])
+        items.append(payload)
+    return items
+
+
 # ─── results ─────────────────────────────────────────────────────────────────
 
 def save_result(id: str, data: dict) -> None:
@@ -95,7 +147,7 @@ def save_result(id: str, data: dict) -> None:
                 metrics.get("total_return_pct"),
                 metrics.get("sharpe_ratio"),
                 metrics.get("max_drawdown_pct"),
-                metrics.get("win_rate"),
+                metrics.get("win_rate_pct", metrics.get("win_rate")),
                 int(metrics.get("total_trades", 0)),
                 data.get("data_period"),
                 psycopg2.extras.Json(data),
@@ -252,3 +304,197 @@ def get_recent_audit_logs(limit: int = 50) -> list[dict]:
         entry["created_at"] = _iso(entry["created_at"])
         result.append(entry)
     return result
+
+
+# ─── watchlist ───────────────────────────────────────────────────────────────
+
+DEFAULT_WATCHLIST = [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "TSLA",
+    "NVDA",
+    "META",
+    "JPM",
+]
+
+
+def get_watchlist_symbols(asset_type: str = "equity") -> list[str]:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT symbol
+            FROM watchlist
+            WHERE asset_type = %s
+            ORDER BY updated_at DESC, symbol ASC
+            """,
+            (asset_type,),
+        )
+        rows = cur.fetchall()
+
+    symbols = [str(row["symbol"]).upper() for row in rows]
+    if asset_type == "equity" and not symbols:
+        for symbol in DEFAULT_WATCHLIST:
+            add_watchlist_symbol(symbol, asset_type="equity")
+        return DEFAULT_WATCHLIST.copy()
+    return symbols
+
+
+def add_watchlist_symbol(symbol: str, *, asset_type: str = "equity", display_name: str | None = None) -> str:
+    clean = symbol.strip().upper()
+    if not clean:
+        raise ValueError("symbol is required")
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO watchlist (symbol, asset_type, display_name, updated_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (symbol) DO UPDATE SET
+                asset_type = EXCLUDED.asset_type,
+                display_name = COALESCE(EXCLUDED.display_name, watchlist.display_name),
+                updated_at = NOW()
+            """,
+            (clean, asset_type, display_name),
+        )
+    return clean
+
+
+def remove_watchlist_symbol(symbol: str) -> bool:
+    clean = symbol.strip().upper()
+    if not clean:
+        return False
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM watchlist WHERE symbol = %s", (clean,))
+        return cur.rowcount > 0
+
+
+# ─── backtest configurations ────────────────────────────────────────────────
+
+def save_backtest_configuration(config_id: str, data: dict) -> None:
+    selected_assets = data.get("selected_assets") or []
+    risk_params = data.get("risk_parameters") or data.get("risk_params") or {}
+    costs = data.get("transaction_costs") or data.get("costs") or {}
+    ai_notes = data.get("ai") or {}
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO backtest_configurations (
+                id, strategy_id, name, data_source, asset_class, selected_assets,
+                start_date, end_date, timeframe, initial_capital,
+                position_sizing_method, position_pct, score,
+                risk_params, costs, ai_notes, data, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                strategy_id            = EXCLUDED.strategy_id,
+                name                   = EXCLUDED.name,
+                data_source            = EXCLUDED.data_source,
+                asset_class            = EXCLUDED.asset_class,
+                selected_assets        = EXCLUDED.selected_assets,
+                start_date             = EXCLUDED.start_date,
+                end_date               = EXCLUDED.end_date,
+                timeframe              = EXCLUDED.timeframe,
+                initial_capital        = EXCLUDED.initial_capital,
+                position_sizing_method = EXCLUDED.position_sizing_method,
+                position_pct           = EXCLUDED.position_pct,
+                score                  = EXCLUDED.score,
+                risk_params            = EXCLUDED.risk_params,
+                costs                  = EXCLUDED.costs,
+                ai_notes               = EXCLUDED.ai_notes,
+                data                   = EXCLUDED.data,
+                updated_at             = NOW()
+            """,
+            (
+                config_id,
+                data.get("strategy_id"),
+                data.get("name"),
+                data.get("data_source"),
+                data.get("asset_class"),
+                psycopg2.extras.Json(selected_assets),
+                data.get("start_date"),
+                data.get("end_date"),
+                data.get("timeframe"),
+                data.get("initial_capital"),
+                data.get("position_sizing_method"),
+                data.get("position_pct"),
+                data.get("score"),
+                psycopg2.extras.Json(risk_params),
+                psycopg2.extras.Json(costs),
+                psycopg2.extras.Json(ai_notes),
+                psycopg2.extras.Json(data),
+            ),
+        )
+
+
+def get_backtest_configuration(config_id: str) -> dict | None:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, strategy_id, data, created_at, updated_at
+            FROM backtest_configurations
+            WHERE id = %s
+            """,
+            (config_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    payload = _as_dict(row["data"])
+    payload["id"] = row["id"]
+    payload["strategy_id"] = row.get("strategy_id") or payload.get("strategy_id")
+    payload["created_at"] = _iso(row["created_at"])
+    payload["updated_at"] = _iso(row["updated_at"])
+    return payload
+
+
+def list_backtest_configurations(*, strategy_id: str | None = None, limit: int = 100) -> list[dict]:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        if strategy_id:
+            cur.execute(
+                """
+                SELECT id, strategy_id, data, created_at, updated_at
+                FROM backtest_configurations
+                WHERE strategy_id = %s
+                ORDER BY updated_at DESC
+                LIMIT %s
+                """,
+                (strategy_id, limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, strategy_id, data, created_at, updated_at
+                FROM backtest_configurations
+                ORDER BY updated_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+        rows = cur.fetchall()
+
+    items: list[dict] = []
+    for row in rows:
+        payload = _as_dict(row["data"])
+        payload["id"] = row["id"]
+        payload["strategy_id"] = row.get("strategy_id") or payload.get("strategy_id")
+        payload["created_at"] = _iso(row["created_at"])
+        payload["updated_at"] = _iso(row["updated_at"])
+        items.append(payload)
+    return items
+
+
+def delete_backtest_configuration(config_id: str) -> bool:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM backtest_configurations WHERE id = %s", (config_id,))
+        return cur.rowcount > 0

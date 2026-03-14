@@ -23,7 +23,12 @@ def _dsn() -> str:
 @contextmanager
 def get_conn():
     """Yield a committed-on-exit, always-closed psycopg2 connection."""
-    conn = psycopg2.connect(_dsn(), cursor_factory=psycopg2.extras.RealDictCursor)
+    connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
+    conn = psycopg2.connect(
+        _dsn(),
+        connect_timeout=connect_timeout,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+    )
     try:
         yield conn
         conn.commit()
@@ -95,6 +100,38 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── watchlist ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS watchlist (
+    symbol        VARCHAR(20) PRIMARY KEY,
+    asset_type    VARCHAR(20) NOT NULL DEFAULT 'equity',
+    display_name  VARCHAR(100),
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── backtest_configurations ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS backtest_configurations (
+    id                     TEXT            PRIMARY KEY,
+    strategy_id            TEXT            REFERENCES strategies(id) ON DELETE SET NULL,
+    name                   VARCHAR(120),
+    data_source            VARCHAR(40),
+    asset_class            VARCHAR(30),
+    selected_assets        JSONB           NOT NULL DEFAULT '[]',
+    start_date             DATE,
+    end_date               DATE,
+    timeframe              VARCHAR(10),
+    initial_capital        NUMERIC(14,2),
+    position_sizing_method VARCHAR(40),
+    position_pct           NUMERIC(8,4),
+    score                  INT,
+    risk_params            JSONB           NOT NULL DEFAULT '{}',
+    costs                  JSONB           NOT NULL DEFAULT '{}',
+    ai_notes               JSONB           NOT NULL DEFAULT '{}',
+    data                   JSONB           NOT NULL,
+    created_at             TIMESTAMPTZ     DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ     DEFAULT NOW()
+);
+
 -- ── indexes ──────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_results_ticker      ON results(ticker);
 CREATE INDEX IF NOT EXISTS idx_results_created_at  ON results(created_at DESC);
@@ -102,6 +139,10 @@ CREATE INDEX IF NOT EXISTS idx_strategies_ticker   ON strategies(ticker);
 CREATE INDEX IF NOT EXISTS idx_audit_session       ON audit_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_event_type    ON audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_created_at    ON audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_watchlist_type      ON watchlist(asset_type);
+CREATE INDEX IF NOT EXISTS idx_watchlist_updated   ON watchlist(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bt_config_strategy  ON backtest_configurations(strategy_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bt_config_updated   ON backtest_configurations(updated_at DESC);
 """
 
 

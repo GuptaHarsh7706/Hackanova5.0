@@ -1,3 +1,6 @@
+from dsl.strategy_dsl import compile_strategy_payload
+
+
 REQUIRED_FIELDS = ["ticker", "entry_rules"]
 VALID_INDICATORS = {"SMA", "EMA", "RSI", "MACD", "BBANDS", "PRICE", "VOLUME", "ATR", "STOCH", "VWAP"}
 VALID_CONDITIONS = {"crosses_above", "crosses_below", "greater_than", "less_than", "equals", "between"}
@@ -11,8 +14,15 @@ def _to_float(value, default=None):
 
 
 def execute_validate_tool(strategy: dict) -> dict:
+    compile_issues = []
+    try:
+        compiled = compile_strategy_payload(strategy)
+        strategy = compiled.model_dump()
+    except Exception as exc:
+        compile_issues.append(f"dsl_compile_error: {exc}")
+
     missing = []
-    issues = []
+    issues = compile_issues
 
     if not strategy.get("ticker"):
         missing.append("ticker")

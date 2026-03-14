@@ -1,4 +1,4 @@
-import { BookOpen, Menu, Wifi, WifiOff, Loader2 } from "lucide-react"
+import { BookOpen, Menu, WifiOff, Loader2 } from "lucide-react"
 import { useEffect } from "react"
 import { useLocation } from "react-router-dom"
 
@@ -24,20 +24,20 @@ function BackendStatus() {
 
   if (status === "unknown") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2 py-1 text-xs text-[var(--text-muted)]">
+      <span className="inline-flex items-center gap-1.5 rounded-sm border border-[var(--border-default)] bg-[var(--bg-surface)] px-2 py-1 font-mono text-[11px] text-[var(--text-muted)]">
         <Loader2 className="h-3 w-3 animate-spin" /> Connecting…
       </span>
     )
   }
   if (status === "offline") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-800 bg-red-950/50 px-2 py-1 text-xs text-red-400">
+      <span className="inline-flex items-center gap-1.5 rounded-sm border border-red-900 bg-red-950/30 px-2 py-1 font-mono text-[11px] text-red-400">
         <WifiOff className="h-3 w-3" /> Backend offline
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800 bg-emerald-950/50 px-2 py-1 text-xs text-emerald-400">
+    <span className="inline-flex items-center gap-1.5 rounded-sm border border-emerald-900 bg-emerald-950/30 px-2 py-1 font-mono text-[11px] text-emerald-400">
       <span className="relative flex h-2 w-2">
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
         <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
@@ -55,7 +55,7 @@ export default function Header() {
   const showMobilePanelControl = path === "/app"
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--border-default)] bg-[var(--bg-base)]/90 px-4 backdrop-blur-sm">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--terminal-line)] bg-black/95 px-4 backdrop-blur-sm">
       <div className="flex items-center gap-2">
         {showMobilePanelControl ? (
           <button
@@ -66,7 +66,7 @@ export default function Header() {
             <Menu className="h-4 w-4" />
           </button>
         ) : null}
-        <h1 className="text-base font-semibold">{title}</h1>
+        <h1 className="font-mono text-sm font-semibold tracking-wide text-[var(--brand-200)]">{title.toUpperCase()}</h1>
       </div>
 
       <div className="flex items-center gap-3">
@@ -80,7 +80,7 @@ export default function Header() {
         >
           <BookOpen className="h-4 w-4" />
         </a>
-        <div className="grid h-8 w-8 place-items-center rounded-full bg-[var(--brand-700)] text-xs font-semibold">TV</div>
+        <div className="grid h-8 w-8 place-items-center rounded-sm border border-[var(--brand-700)] bg-[var(--brand-900)] font-mono text-xs font-semibold text-[var(--brand-200)]">TV</div>
       </div>
     </header>
   )

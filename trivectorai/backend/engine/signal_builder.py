@@ -103,4 +103,35 @@ def build_signals(df: pd.DataFrame, strategy: dict):
     exit_signals = _build_signal_for_rules(df, strategy.get("exit_rules", []))
     if not strategy.get("exit_rules"):
         exit_signals = pd.Series(False, index=df.index)
+
+    hold_bars = strategy.get("holding_period_bars")
+    if hold_bars is None:
+        hold_bars = strategy.get("max_hold_days")
+
+    try:
+        hold_bars = int(hold_bars) if hold_bars is not None else None
+    except Exception:
+        hold_bars = None
+
+    if hold_bars and hold_bars > 0:
+        timed_exits = pd.Series(False, index=df.index)
+        in_position = False
+        entry_index = None
+
+        for i, idx in enumerate(df.index):
+            if not in_position and bool(entry_signals.iloc[i]):
+                in_position = True
+                entry_index = i
+            elif in_position:
+                bars_held = i - (entry_index or 0)
+                if bars_held >= hold_bars:
+                    timed_exits.iloc[i] = True
+                    in_position = False
+                    entry_index = None
+                elif bool(exit_signals.iloc[i]):
+                    in_position = False
+                    entry_index = None
+
+        exit_signals = (exit_signals | timed_exits).fillna(False)
+
     return entry_signals.values, exit_signals.values
